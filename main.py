@@ -6,6 +6,7 @@ import os
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import urlsplit
 
@@ -454,7 +455,7 @@ async def handle_leaderboard(message: Message, bot: Bot):
     )
 
 
-@dp.message(F.text)
+@dp.message(F.text & ~F.text.startswith("/"))
 async def handle_text_fallback(message: Message, bot: Bot):
     if not message.from_user:
         return
