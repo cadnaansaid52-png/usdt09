@@ -6,6 +6,7 @@ import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Optional
+from urllib.parse import urlsplit
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ChatMemberStatus
@@ -75,20 +76,41 @@ def parse_force_channels(raw_value: str) -> list[RequiredChannel]:
             continue
 
         parts = [part.strip() for part in entry.split("|")]
-        chat_id = parts[0]
-        if not chat_id:
+        raw_chat_id = parts[0]
+        if not raw_chat_id:
             continue
 
-        if len(parts) >= 2 and parts[1]:
-            join_url = parts[1]
-        elif chat_id.startswith("@"):
-            join_url = f"https://t.me/{chat_id[1:]}"
+        supplied_join_url = parts[1] if len(parts) >= 2 else ""
+        title = parts[2] if len(parts) >= 3 and parts[2] else raw_chat_id
+
+        # Accept a public channel username, or its full t.me link.
+        # Private invite links still require the numeric channel ID:
+        # -1001234567890|https://t.me/+inviteCode|Private channel
+        if raw_chat_id.startswith(("@", "https://t.me/", "http://t.me/")):
+            if raw_chat_id.startswith("@"):
+                username = raw_chat_id[1:].strip().strip("/")
+                chat_id = f"@{username}"
+                join_url = supplied_join_url or f"https://t.me/{username}"
+            else:
+                parsed = urlsplit(raw_chat_id)
+                path = parsed.path.strip("/")
+                if not path or path.startswith("+") or path.startswith("joinchat/"):
+                    logger.warning(
+                        "Skipping a private invite link: configure its numeric channel ID, invite URL and optional title."
+                    )
+                    continue
+                username = path.split("/", 1)[0]
+                chat_id = f"@{username}"
+                join_url = supplied_join_url or f"https://t.me/{username}"
         else:
-            logger.warning(
-                "Skipping channel %s: private channels need an invite URL.",
-                chat_id,
-            )
-            continue
+            # Numeric Telegram channel IDs are used for private channels.
+            chat_id = raw_chat_id
+            join_url = supplied_join_url
+            if not join_url:
+                logger.warning(
+                    "Skipping private channel ID: provide its invite URL after a | separator."
+                )
+                continue
 
         title = parts[2] if len(parts) >= 3 and parts[2] else chat_id
         if not join_url.startswith(("https://t.me/", "http://t.me/")):
