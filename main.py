@@ -553,6 +553,15 @@ async def handle_text_fallback(message: Message, bot: Bot):
     )
 
 
+@dp.message(Command("chatid"))
+async def handle_chat_id(message: Message):
+    await message.answer(
+        f"🆔 Chat ID: <code>{message.chat.id}</code>\\n\\n"
+        "Copy this ID into Render as DEMO_PROOF_CHAT_ID to receive labelled demo withdrawal notices.",
+        parse_mode="HTML",
+    )
+
+
 @dp.message(Command("help"))
 async def handle_help(message: Message, bot: Bot):
     if not message.from_user or not await ensure_access(message, bot):
@@ -675,6 +684,7 @@ async def lifespan(_app: FastAPI):
             BotCommand(command="start", description="Start the bot"),
             BotCommand(command="help", description="How to use the bot"),
             BotCommand(command="cancel", description="Cancel current demo withdrawal"),
+            BotCommand(command="chatid", description="Show this chat ID for demo receipts setup"),
         ]
     )
 
