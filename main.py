@@ -347,8 +347,21 @@ async def handle_other_messages(message: Message, bot: Bot) -> None:
 async def lifespan(_app: FastAPI):
     global active_bot, polling_task
 
-    if not BOT_TOKEN:
-        raise RuntimeError("BOT_TOKEN is missing. Add it in the service environment.")
+    # Allow Render to deploy the HTTP health service before the owner adds
+    # the Telegram token and required channels. The Telegram bot stays disabled
+    # until both values are configured; no menu or rewards can be used meanwhile.
+    if not BOT_TOKEN or not REQUIRED_CHANNELS:
+        missing = []
+        if not BOT_TOKEN:
+            missing.append("BOT_TOKEN")
+        if not REQUIRED_CHANNELS:
+            missing.append("FORCE_CHANNELS")
+        logger.warning(
+            "Telegram bot is disabled until these environment variables are set: %s",
+            ", ".join(missing),
+        )
+        yield
+        return
 
     active_bot = Bot(token=BOT_TOKEN)
 
@@ -419,14 +432,19 @@ app = FastAPI(
 async def root():
     return {
         "service": "USDT09 Telegram Bot",
-        "status": "online",
+        "status": "online" if active_bot is not None else "waiting_for_configuration",
+        "telegram_bot_enabled": active_bot is not None,
         "features": "coming_soon",
     }
 
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "service": "usdt09"}
+    return {
+        "ok": True,
+        "service": "usdt09",
+        "telegram_bot_enabled": active_bot is not None,
+    }
 
 
 @app.post(WEBHOOK_PATH)
