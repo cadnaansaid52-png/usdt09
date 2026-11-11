@@ -13,7 +13,8 @@ from urllib.parse import urlsplit
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ChatMemberStatus
 from aiogram.exceptions import TelegramAPIError
-from aiogram.filters import Command, CommandObject, CommandStart
+from aiogram.filters import Command, CommandStart
+from aiogram.filters.command import CommandObject
 from aiogram.types import (
     BotCommand,
     CallbackQuery,
