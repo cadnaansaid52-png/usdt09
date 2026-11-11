@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: usdt09
+    runtime: python
+    plan: free
+    region: frankfurt
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    autoDeployTrigger: commit
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: usdt09-db
+          property: connectionString
+
+databases:
+  - name: usdt09-db
+    databaseName: usdt09_db
+    plan: free
+    region: frankfurt
+    postgresMajorVersion: "18"
