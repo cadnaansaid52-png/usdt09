@@ -1,103 +1,66 @@
 # USDT09 Telegram Bot
 
-A Telegram bot preview inspired by the supplied reference screenshots.
+USDT09 is a demo-only Telegram bot preview with Channel Force, hourly demo credits, referrals, a leaderboard, and simulated withdrawal receipts.
 
-## Included in this version
+## Important: demo only
 
-- Required-channel join screen.
-- **Verify** button that checks Telegram channel membership.
-- Reply keyboard with:
-  - 💰 Balance
-  - 🎁 Bonus
-  - 💸 Withdraw
-  - 👥 Referrals
-  - 🏆 Leaderboard
-- Every menu feature intentionally responds with **Coming Soon**.
+- The hourly 0.0500 USDT value is a **demo credit**, not money.
+- Withdrawals only create a simulated record and a clearly labelled demo receipt.
+- The bot does not send USDT, interact with the TON blockchain, or create transaction hashes.
+- The receipt page is not TonScan and clearly states that no on-chain transfer occurred.
+- Do not advertise these demo balances or receipts as real payouts.
 
-## Important: preview only
+## Features
 
-Balance, bonus, withdrawal, referral, leaderboard, wallet, payment, and reward features are **not implemented**. The bot does not collect deposits, promise earnings, or send USDT. This version only provides the Channel Force flow and the menu layout/placeholders.
-
-## Requirements
-
-- Python 3.10+
-- A Telegram bot token from [@BotFather](https://t.me/BotFather)
-- The bot must be an **administrator** in every channel listed in `FORCE_CHANNELS`.
+- Required-channel join and Verify.
+- Dynamic balance keyboard (for example: `💰 0.00 USDT`).
+- One hourly demo bonus of 0.0500 per verified user.
+- Cooldown response with remaining hours/minutes/seconds.
+- Referral deep links and verified referral counts.
+- Top 10 leaderboard based on verified referrals.
+- Demo withdrawal flow: amount + address, 0.05 minimum.
+- Optional demo receipt message to a Telegram group.
+- Responsive demo receipt web page.
 
 ## Environment variables
 
 | Variable | Required | Description |
 |---|---:|---|
-| `BOT_TOKEN` | Yes | Telegram bot token from BotFather |
-| `FORCE_CHANNELS` | Recommended | Required channels, separated by semicolons |
-| `WEBHOOK_URL` | Render webhook mode | Public base URL of this service, e.g. `https://your-service.onrender.com` |
-| `WEBHOOK_SECRET` | With webhook | Secret containing only letters, numbers, underscore or hyphen |
-| `LOG_LEVEL` | No | Defaults to `INFO` |
+| `BOT_TOKEN` | Yes | Telegram bot token |
+| `FORCE_CHANNELS` | Yes | Required public/private channels |
+| `WEBHOOK_URL` | Optional | Public service URL; enables webhook mode |
+| `WEBHOOK_SECRET` | Required if webhook | Telegram webhook secret |
+| `PUBLIC_BASE_URL` | Recommended | Public service base URL for demo receipt links |
+| `DEMO_PROOF_CHAT_ID` | Optional | Group/chat ID to receive demo withdrawal notices |
+| `DATABASE_PATH` | No | SQLite file path |
+| `LOG_LEVEL` | No | Defaults to INFO |
 
 ### FORCE_CHANNELS examples
 
-Public channel (short format):
+Public channel:
+`@yourchannel`
 
-```text
-@yourchannel
-```
+Public channel full link:
+`https://t.me/yourchannel`
 
-Multiple public channels:
+Multiple channels:
+`@channel_one;@channel_two`
 
-```text
-@channel_one;@channel_two
-```
+Private channel:
+`-1001234567890|https://t.me/+INVITE_CODE|Private channel`
 
-Private channel or custom display label:
-
-```text
--1001234567890|https://t.me/+YOUR_INVITE_CODE|Private community
-```
-
-You can combine entries:
-
-```text
-@public_channel|https://t.me/public_channel|Public Channel;-1001234567890|https://t.me/+INVITE_CODE|Private Channel
-```
-
-For private channels, use the channel ID and a valid invite link. Do not include real bot tokens or secrets in GitHub files.
-
-## Run locally
-
-1. Create a virtual environment.
-2. Install dependencies:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. Set `BOT_TOKEN` and `FORCE_CHANNELS`.
-4. Start the app:
-
-   ```bash
-   uvicorn main:app --host 0.0.0.0 --port 8000
-   ```
-
-When `WEBHOOK_URL` is empty, the app uses polling (convenient for local testing).
+The bot must be an administrator in every required channel and the optional demo group.
 
 ## Deploy on Render
 
-Create a **Python Web Service** connected to this repository.
-
 - Build command: `pip install -r requirements.txt`
 - Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-- Add `BOT_TOKEN` and `FORCE_CHANNELS` in Environment.
-- For webhook mode, also set:
-  - `WEBHOOK_URL` to the public base URL Render assigned to your service.
-  - `WEBHOOK_SECRET` to a strong random value using letters, numbers, `_` and `-`.
+- Add the environment variables in the Render Dashboard.
+- Set `PUBLIC_BASE_URL=https://your-service.onrender.com`.
+- If using `DEMO_PROOF_CHAT_ID`, add the bot to that group and give it permission to send messages.
 
-The app sets the Telegram webhook during startup when `WEBHOOK_URL` is configured. If it is not configured, the app uses polling.
+If `WEBHOOK_URL` is empty, the app uses polling. If `WEBHOOK_URL` is set, `WEBHOOK_SECRET` must also be set.
 
-## Channel Force troubleshooting
+## Persistence note
 
-If membership verification fails:
-
-1. Confirm the channel ID or username is correct.
-2. Add the bot as an administrator in each required channel.
-3. Confirm the configured invite URL is valid.
-4. Check the Render application logs for Telegram API errors.
+This version uses SQLite. Render Free services have ephemeral local filesystems, so database records (users, balances, bonuses and demo receipts) can be lost when the service is redeployed or restarted. Use a persistent database or persistent disk before relying on long-term records. Do not treat the demo ledger as real money or a payment system.
