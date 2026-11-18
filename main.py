@@ -209,9 +209,11 @@ async def handle_start(message: Message, command: CommandObject, bot: Bot):
         return
 
     referrer_id = None
-    match = re.fullmatch(r"ref_(\d+)", (command.args or "").strip())
+    match = re.fullmatch(r"ref_(\d{1,19})", (command.args or "").strip())
     if match:
-        referrer_id = int(match.group(1))
+        candidate_id = int(match.group(1))
+        if 0 < candidate_id <= 9223372036854775807 and candidate_id != user.id:
+            referrer_id = candidate_id
 
     status, _ = await get_membership_status(bot, user.id)
     storage.register_user(
@@ -430,7 +432,14 @@ async def handle_leaderboard(message: Message, bot: Bot):
     else:
         for index, row in enumerate(rows, start=1):
             medal = medals[index - 1] if index <= 3 else f"{index}."
-            lines.append(f"{medal} {html.escape(row.get('first_name') or row.get('username') or str(row['telegram_id']))} — <b>{row['referrals']}</b>")
+            display_name = " ".join(
+                part for part in (row.get("first_name"), row.get("last_name")) if part
+            ).strip()
+            if not display_name:
+                display_name = f"@{row['username']}" if row.get("username") else str(row["telegram_id"])
+            lines.append(
+                f"{medal} {html.escape(display_name)} — <b>{int(row['referrals'])}</b>"
+            )
     await message.answer("\n".join(lines), reply_markup=main_keyboard(message.from_user.id), parse_mode="HTML")
 
 
