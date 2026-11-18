@@ -115,7 +115,6 @@ def main_keyboard(user_id):
         keyboard=[
             [KeyboardButton(text=f"💰 {storage.format_units(balance, 2)} USDT")],
             [KeyboardButton(text="🎁 Bonus"), KeyboardButton(text="💸 Withdraw")],
-            [KeyboardButton(text="📄 My Withdrawals")],
             [KeyboardButton(text="👥 Referrals"), KeyboardButton(text="🏆 Leaderboard")],
         ],
         resize_keyboard=True,
@@ -278,7 +277,7 @@ async def handle_help(message: Message):
         "<b>USDT09 Help</b>\n\n"
         "🎁 Claim your available bonus.\n"
         "💸 Submit a withdrawal request with your network and wallet.\n"
-        "📄 Check withdrawal status and TXID.\n"
+        "Track updates through withdrawal notifications from the bot.\n"
         "👥 Invite friends using your referral link.\n\n"
         "For support, contact the bot administrator.",
         parse_mode="HTML",
@@ -398,30 +397,6 @@ async def receive_withdrawal(message: Message, state: FSMContext, bot: Bot):
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML",
     )
-
-
-@dp.message(F.text == "📄 My Withdrawals")
-async def handle_my_withdrawals(message: Message, bot: Bot):
-    if not await ensure_access(message, bot):
-        return
-    rows = storage.get_user_withdrawals(message.from_user.id, 10)
-    if not rows:
-        await message.answer("You have no withdrawal requests yet.", reply_markup=main_keyboard(message.from_user.id))
-        return
-    labels = {
-        "pending": "🟠 Pending",
-        "approved": "🔵 Approved — awaiting manual transfer",
-        "paid": "🟢 Paid",
-        "rejected": "🔴 Rejected — funds returned",
-    }
-    lines = ["📄 <b>Your recent withdrawals</b>\n"]
-    for row in rows:
-        lines.append(
-            f"#{row['id']} · <b>{storage.format_units(row['amount_units'])} USDT</b>\n"
-            f"{html.escape(row['network'])} · {labels.get(row['status'], row['status'])}\n"
-            f"TXID: <code>{html.escape(row.get('txid') or 'Not available')}</code>"
-        )
-    await message.answer("\n\n".join(lines), reply_markup=main_keyboard(message.from_user.id), parse_mode="HTML")
 
 
 @dp.message(F.text == "👥 Referrals")
