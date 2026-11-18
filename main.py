@@ -205,7 +205,8 @@ def _valid_wallet(network, address):
 
 
 @dp.message(CommandStart())
-async def handle_start(message: Message, command: CommandObject, bot: Bot):
+async def handle_start(message: Message, command: CommandObject, bot: Bot, state: FSMContext):
+    await state.clear()
     user = message.from_user
     if not user:
         return
@@ -279,7 +280,8 @@ async def show_my_id(message: Message):
 
 
 @dp.message(Command("help"))
-async def handle_help(message: Message):
+async def handle_help(message: Message, state: FSMContext):
+    await state.clear()
     await message.answer(
         "<b>USDT09 Help</b>\n\n"
         "🎁 Claim your available bonus.\n"
