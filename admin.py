@@ -41,6 +41,7 @@ class AdminStates(StatesGroup):
     waiting_setting = State()
     waiting_txid = State()
     waiting_reject_note = State()
+    waiting_channel = State()
 
 
 def _btn(text, data):
@@ -51,6 +52,7 @@ def admin_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [_btn("📊 Dashboard", "adm:dashboard"), _btn("👥 Users", "adm:users")],
         [_btn("🔎 Search user", "adm:search"), _btn("💸 Withdrawals", "adm:withdrawals")],
+        [_btn("📢 Force Join channels", "adm:channels")],
         [_btn("⚙️ Settings", "adm:settings"), _btn("📈 Ledger summary", "adm:ledger")],
     ])
 
@@ -131,10 +133,7 @@ async def show_users(target, query=None):
         username = ("@" + row["username"]) if row.get("username") else str(uid)
         lines.append(f"{status} {html.escape(username)} · <code>{uid}</code> · {_fmt(row['balance_units'])} USDT")
         buttons.append([_btn(f"{status} {username[:24]} · {uid}", f"adm:user:{uid}")])
-    buttons.extend([
-        [_btn("🔎 Search", "adm:search")],
-        [_btn("⬅️ Dashboard", "adm:dashboard")],
-    ])
+    buttons.append([_btn("⬅️ Dashboard", "adm:dashboard")])
     await _edit(target, "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
@@ -237,9 +236,70 @@ async def show_settings(target):
         [_btn("🎁 Change bonus amount", "adm:set:bonus_units")],
         [_btn("⏱ Change bonus interval", "adm:set:bonus_interval_seconds")],
         [_btn("⬇️ Change minimum withdrawal", "adm:set:min_withdrawal_units")],
+        [_btn("📢 Manage Force Join channels", "adm:channels")],
         [_btn("⬅️ Dashboard", "adm:dashboard")],
     ])
     await _edit(target, text, keyboard)
+
+
+def _force_channel_entries():
+    raw = storage.get_setting("force_channels", __import__("os").getenv("FORCE_CHANNELS", ""))
+    return [entry.strip() for entry in (raw or "").split(";") if entry.strip()]
+
+
+async def show_force_channels(target):
+    entries = _force_channel_entries()
+    lines = [
+        "📢 <b>FORCE JOIN CHANNELS</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        "Users must join each channel listed here before using the bot.",
+        "",
+    ]
+    buttons = []
+    if entries:
+        for index, entry in enumerate(entries):
+            lines.append(f"<b>{index + 1}.</b> <code>{html.escape(entry)}</code>")
+            buttons.append([_btn(f"🗑 Remove channel {index + 1}", f"adm:channel:remove:{index}")])
+    else:
+        lines.append("No channels configured yet.")
+
+    buttons.extend([
+        [_btn("➕ Add channel", "adm:channel:add")],
+        [_btn("⬅️ Admin dashboard", "adm:dashboard")],
+    ])
+    await _edit(target, "\\n".join(lines), InlineKeyboardMarkup(inline_keyboard=buttons))
+
+
+def _normalize_force_channel_entry(value):
+    raw = (value or "").strip()
+    if not raw:
+        return None
+
+    parts = [part.strip() for part in raw.split("|")]
+    raw_id = parts[0]
+
+    if raw_id.startswith("@"):
+        username = raw_id[1:].strip().strip("/")
+        if re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
+            return f"@{username}"
+        return None
+
+    if raw_id.startswith("https://t.me/"):
+        match = re.fullmatch(r"https://t\\.me/([A-Za-z0-9_]{5,32})/?", raw_id)
+        if match:
+            return f"@{match.group(1)}"
+        return None
+
+    if re.fullmatch(r"-100[0-9]{5,18}", raw_id) and len(parts) >= 2:
+        join_url = parts[1]
+        if not re.fullmatch(r"https://t\\.me/[A-Za-z0-9_+/-]+", join_url):
+            return None
+        title = parts[2] if len(parts) > 2 and parts[2] else raw_id
+        if len(title) > 60:
+            return None
+        return f"{raw_id}|{join_url}|{title}"
+
+    return None
 
 
 @admin_router.callback_query(F.data.startswith("adm:"))
@@ -251,7 +311,26 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
     action = data[1] if len(data) > 1 else ""
     await callback.answer()
 
-    if action == "dashboard":
+    if action == "channels":
+        await state.clear()
+        await show_force_channels(callback)
+    elif action == "channel" and len(data) == 3 and data[2] == "add":
+        await state.set_state(AdminStates.waiting_channel)
+        await callback.message.answer(
+            "Send a public channel username, for example <code>@mychannel</code>.\\n"
+            "For a private channel send: <code>-1001234567890|https://t.me/+INVITECODE|Channel name</code>.\\n\\n"
+            "Make sure the bot is an administrator in the channel.",
+            parse_mode="HTML",
+        )
+    elif action == "channel" and len(data) == 4 and data[2] == "remove" and data[3].isdigit():
+        entries = _force_channel_entries()
+        index = int(data[3])
+        if 0 <= index < len(entries):
+            removed = entries.pop(index)
+            storage.update_setting("force_channels", ";".join(entries))
+            await callback.message.answer(f"✅ Removed Force Join channel: <code>{html.escape(removed)}</code>", parse_mode="HTML")
+        await show_force_channels(callback)
+    elif action == "dashboard":
         await state.clear()
         await show_dashboard(callback)
     elif action == "users":
@@ -338,6 +417,40 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
             f"Rejected total: <b>{_fmt(stats['rejected_units'])} USDT</b>",
             back_dashboard(),
         )
+
+
+@admin_router.message(AdminStates.waiting_channel)
+async def receive_force_channel(message: Message, state: FSMContext):
+    if not message.from_user or not is_admin(message.from_user.id):
+        await state.clear()
+        return
+
+    entry = _normalize_force_channel_entry(message.text or "")
+    if not entry:
+        await message.answer(
+            "⚠️ Invalid channel details.\\n"
+            "Public channel: <code>@mychannel</code>\\n"
+            "Private channel: <code>-1001234567890|https://t.me/+INVITECODE|Channel name</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    entries = _force_channel_entries()
+    new_id = entry.split("|", 1)[0].lower()
+    if any(existing.split("|", 1)[0].lower() == new_id for existing in entries):
+        await state.clear()
+        await message.answer("That channel is already in the Force Join list.")
+        await show_force_channels(message)
+        return
+
+    entries.append(entry)
+    storage.update_setting("force_channels", ";".join(entries))
+    await state.clear()
+    await message.answer(
+        "✅ Force Join channel added. The bot must be an administrator in this channel.",
+        parse_mode="HTML",
+    )
+    await show_force_channels(message)
 
 
 @admin_router.message(AdminStates.waiting_search)
