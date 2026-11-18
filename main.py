@@ -293,7 +293,8 @@ async def handle_cancel(message: Message, state: FSMContext):
 
 
 @dp.message(F.text.startswith("💰"))
-async def handle_balance(message: Message, bot: Bot):
+async def handle_balance(message: Message, bot: Bot, state: FSMContext):
+    await state.clear()
     if not await ensure_access(message, bot):
         return
     balance = storage.get_balance_units(message.from_user.id)
@@ -307,7 +308,8 @@ async def handle_balance(message: Message, bot: Bot):
 
 
 @dp.message(F.text == "🎁 Bonus")
-async def handle_bonus(message: Message, bot: Bot):
+async def handle_bonus(message: Message, bot: Bot, state: FSMContext):
+    await state.clear()
     if not await ensure_access(message, bot):
         return
     status, balance, remaining = storage.claim_hourly_bonus(message.from_user.id)
@@ -333,6 +335,7 @@ async def handle_bonus(message: Message, bot: Bot):
 
 @dp.message(F.text == "💸 Withdraw")
 async def handle_withdraw(message: Message, bot: Bot, state: FSMContext):
+    await state.clear()
     if not await ensure_access(message, bot):
         return
     settings = storage.get_settings()
@@ -351,7 +354,15 @@ async def handle_withdraw(message: Message, bot: Bot, state: FSMContext):
     )
 
 
-@dp.message(WithdrawalStates.waiting_for_details)
+@dp.message(
+    WithdrawalStates.waiting_for_details,
+    F.text,
+    ~F.text.startswith("💰"),
+    F.text != "🎁 Bonus",
+    F.text != "💸 Withdraw",
+    F.text != "👥 Referrals",
+    F.text != "🏆 Leaderboard",
+)
 async def receive_withdrawal(message: Message, state: FSMContext, bot: Bot):
     if not await ensure_access(message, bot):
         return
@@ -402,7 +413,8 @@ async def receive_withdrawal(message: Message, state: FSMContext, bot: Bot):
 
 
 @dp.message(F.text == "👥 Referrals")
-async def handle_referrals(message: Message, bot: Bot):
+async def handle_referrals(message: Message, bot: Bot, state: FSMContext):
+    await state.clear()
     if not await ensure_access(message, bot):
         return
     me = await bot.get_me()
@@ -421,7 +433,8 @@ async def handle_referrals(message: Message, bot: Bot):
 
 
 @dp.message(F.text == "🏆 Leaderboard")
-async def handle_leaderboard(message: Message, bot: Bot):
+async def handle_leaderboard(message: Message, bot: Bot, state: FSMContext):
+    await state.clear()
     if not await ensure_access(message, bot):
         return
     rows = storage.get_leaderboard(10)
