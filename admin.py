@@ -296,7 +296,7 @@ def _normalize_force_channel_entry(value):
         if not re.fullmatch(r"https://t\.me/[A-Za-z0-9_+/-]+", join_url):
             return None
         title = parts[2] if len(parts) > 2 and parts[2] else raw_id
-        if len(title) > 60:
+        if len(title) > 60 or any(char in title for char in ";|\\r\\n"):
             return None
         return f"{raw_id}|{join_url}|{title}"
 
@@ -318,8 +318,8 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
     elif action == "channel" and len(data) == 3 and data[2] == "add":
         await state.set_state(AdminStates.waiting_channel)
         await callback.message.answer(
-            "Send a public channel username, for example <code>@mychannel</code>.\\n"
-            "For a private channel send: <code>-1001234567890|https://t.me/+INVITECODE|Channel name</code>.\\n\\n"
+            "Send a public channel username, for example <code>@mychannel</code>.\n"
+            "For a private channel send: <code>-1001234567890|https://t.me/+INVITECODE|Channel name</code>.\n\n"
             "Make sure the bot is an administrator in the channel.",
             parse_mode="HTML",
         )
@@ -429,8 +429,8 @@ async def receive_force_channel(message: Message, state: FSMContext):
     entry = _normalize_force_channel_entry(message.text or "")
     if not entry:
         await message.answer(
-            "⚠️ Invalid channel details.\\n"
-            "Public channel: <code>@mychannel</code>\\n"
+            "⚠️ Invalid channel details.\n"
+            "Public channel: <code>@mychannel</code>\n"
             "Private channel: <code>-1001234567890|https://t.me/+INVITECODE|Channel name</code>",
             parse_mode="HTML",
         )
