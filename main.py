@@ -7,7 +7,7 @@ import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Optional
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ChatMemberStatus
@@ -426,7 +426,16 @@ async def handle_referrals(message: Message, bot: Bot, state: FSMContext):
         f"🔗 <code>{html.escape(invite_link)}</code>\n"
         f"✅ Verified referrals: <b>{count}</b>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📤 Share invite link", url=invite_link)]
+            [
+                InlineKeyboardButton(
+                    text="📤 Share invite link",
+                    url=(
+                        "https://t.me/share/url?"
+                        f"url={quote(invite_link, safe='')}"
+                        f"&text={quote('Join USDT09 and start earning USDT rewards!', safe='')}"
+                    ),
+                )
+            ]
         ]),
         parse_mode="HTML",
     )
@@ -475,8 +484,6 @@ async def lifespan(_app: FastAPI):
     commands = [
         BotCommand(command="start", description="Start the bot"),
         BotCommand(command="help", description="How to use the bot"),
-        BotCommand(command="myid", description="Show your Telegram ID"),
-        BotCommand(command="cancel", description="Cancel current action"),
     ]
     await active_bot.set_my_commands(commands)
     for admin_id in sorted({int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip().isdigit()}):
