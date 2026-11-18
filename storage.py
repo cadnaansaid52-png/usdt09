@@ -165,31 +165,57 @@ def get_settings():
 
 def register_user(telegram_id, username, first_name, last_name, referrer_id=None, verified=False):
     now = int(time.time())
+    telegram_id = int(telegram_id)
+    safe_referrer = None
+
+    # Validate the inviter before storing it. The database uses BIGINT IDs.
+    if referrer_id is not None:
+        try:
+            candidate_id = int(referrer_id)
+        except (TypeError, ValueError, OverflowError):
+            candidate_id = 0
+        if 0 < candidate_id <= 9223372036854775807 and candidate_id != telegram_id:
+            with db_session() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT telegram_id FROM users "
+                        "WHERE telegram_id = %s AND verified = TRUE AND is_banned = FALSE",
+                        (candidate_id,),
+                    )
+                    if cur.fetchone():
+                        safe_referrer = candidate_id
+
     with db_session() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT telegram_id FROM users WHERE telegram_id = %s", (int(telegram_id),))
+            cur.execute("SELECT telegram_id FROM users WHERE telegram_id = %s", (telegram_id,))
             exists = cur.fetchone()
             if exists:
+                # First eligible inviter wins. This also handles users who initially
+                # opened /start without a referral link but were not yet verified.
                 cur.execute("""
                     UPDATE users
                     SET username = %s, first_name = %s, last_name = %s,
-                        verified = CASE WHEN %s THEN TRUE ELSE verified END
+                        verified = CASE WHEN %s THEN TRUE ELSE verified END,
+                        referrer_id = CASE
+                            WHEN referrer_id IS NULL AND verified = FALSE THEN %s
+                            ELSE referrer_id
+                        END
                     WHERE telegram_id = %s
-                """, (username, first_name or "", last_name or "", bool(verified), int(telegram_id)))
+                """, (
+                    username, first_name or "", last_name or "",
+                    bool(verified), safe_referrer, telegram_id
+                ))
                 return False
-
-            safe_referrer = None
-            if referrer_id and int(referrer_id) != int(telegram_id):
-                cur.execute("SELECT telegram_id FROM users WHERE telegram_id = %s AND verified = TRUE AND is_banned = FALSE", (int(referrer_id),))
-                if cur.fetchone():
-                    safe_referrer = int(referrer_id)
 
             cur.execute("""
                 INSERT INTO users (
                     telegram_id, username, first_name, last_name, referrer_id,
                     verified, balance_units, created_at
                 ) VALUES (%s, %s, %s, %s, %s, %s, 0, TO_TIMESTAMP(%s))
-            """, (int(telegram_id), username, first_name or "", last_name or "", safe_referrer, bool(verified), now))
+            """, (
+                telegram_id, username, first_name or "", last_name or "",
+                safe_referrer, bool(verified), now
+            ))
             return True
 
 
@@ -279,14 +305,14 @@ def get_leaderboard(limit=10):
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
                 SELECT u.telegram_id, u.username, u.first_name, u.last_name,
-                       COUNT(r.telegram_id) AS referrals
+                       COUNT(DISTINCT r.telegram_id) AS referrals
                 FROM users AS u
                 JOIN users AS r ON r.referrer_id = u.telegram_id
                 WHERE u.verified = TRUE AND u.is_banned = FALSE
                   AND r.verified = TRUE AND r.is_banned = FALSE
                 GROUP BY u.telegram_id
-                HAVING COUNT(r.telegram_id) > 0
-                ORDER BY referrals DESC, u.created_at ASC
+                HAVING COUNT(DISTINCT r.telegram_id) > 0
+                ORDER BY referrals DESC, u.created_at ASC, u.telegram_id ASC
                 LIMIT %s
             """, (limit,))
             return [dict(row) for row in cur.fetchall()]
