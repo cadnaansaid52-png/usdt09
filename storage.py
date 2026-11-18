@@ -122,6 +122,7 @@ def init_db():
                 "bonus_interval_seconds": str(DEFAULT_BONUS_INTERVAL),
                 "min_withdrawal_units": str(DEFAULT_MIN_WITHDRAWAL_UNITS),
                 "maintenance": "OFF",
+                "force_channels": os.getenv("FORCE_CHANNELS", "").strip(),
             }
             for key, value in defaults.items():
                 cur.execute(
@@ -139,7 +140,7 @@ def get_setting(key, default=None):
 
 
 def update_setting(key, value):
-    allowed = {"bonus_units", "bonus_interval_seconds", "min_withdrawal_units", "maintenance"}
+    allowed = {"bonus_units", "bonus_interval_seconds", "min_withdrawal_units", "maintenance", "force_channels"}
     if key not in allowed:
         raise ValueError("Unknown setting.")
     with db_session() as conn:
