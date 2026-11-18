@@ -420,7 +420,7 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
         )
 
 
-@admin_router.message(AdminStates.waiting_channel)
+@admin_router.message(AdminStates.waiting_channel, F.text, ~F.text.startswith("/"))
 async def receive_force_channel(message: Message, state: FSMContext):
     if not message.from_user or not is_admin(message.from_user.id):
         await state.clear()
