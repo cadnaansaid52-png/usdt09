@@ -60,7 +60,8 @@ class RequiredChannel:
 
 
 class WithdrawalStates(StatesGroup):
-    waiting_for_details = State()
+    waiting_for_amount = State()
+    waiting_for_address = State()
 
 
 def parse_force_channels(raw_value: str):
@@ -95,7 +96,11 @@ def parse_force_channels(raw_value: str):
     return channels
 
 
-REQUIRED_CHANNELS = parse_force_channels(FORCE_CHANNELS_RAW)
+def get_required_channels():
+    raw_value = storage.get_setting("force_channels", FORCE_CHANNELS_RAW)
+    return parse_force_channels(raw_value or "")
+
+
 dp = Dispatcher(storage=MemoryStorage())
 dp.include_router(admin_router)
 
@@ -125,7 +130,7 @@ def main_keyboard(user_id):
 def force_join_keyboard():
     rows = [
         [InlineKeyboardButton(text=f"📢 Join channel · {channel.title}", url=channel.join_url)]
-        for channel in REQUIRED_CHANNELS
+        for channel in get_required_channels()
     ]
     rows.append([InlineKeyboardButton(text="✅ Verify", callback_data="verify_subscription")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -144,7 +149,7 @@ def welcome_text(user_id):
 
 
 async def get_membership_status(bot, user_id):
-    for channel in REQUIRED_CHANNELS:
+    for channel in get_required_channels():
         try:
             member = await bot.get_chat_member(chat_id=channel.chat_id, user_id=user_id)
         except TelegramAPIError:
@@ -286,6 +291,15 @@ async def handle_help(message: Message):
     )
 
 
+@dp.message(F.text == "❌ Cancel")
+async def cancel_withdrawal_button(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(
+        "✅ Withdrawal cancelled.",
+        reply_markup=main_keyboard(message.from_user.id) if message.from_user else None,
+    )
+
+
 @dp.message(Command("cancel"))
 async def handle_cancel(message: Message, state: FSMContext):
     await state.clear()
@@ -333,80 +347,158 @@ async def handle_bonus(message: Message, bot: Bot, state: FSMContext):
         await message.answer("Please complete channel verification before claiming a bonus.")
 
 
+def withdrawal_cancel_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="❌ Cancel")]],
+        resize_keyboard=True,
+        input_field_placeholder="Enter withdrawal details",
+    )
+
+
 @dp.message(F.text == "💸 Withdraw")
 async def handle_withdraw(message: Message, bot: Bot, state: FSMContext):
     await state.clear()
     if not await ensure_access(message, bot):
         return
+
     settings = storage.get_settings()
     balance = storage.get_balance_units(message.from_user.id)
-    await state.set_state(WithdrawalStates.waiting_for_details)
+    minimum = settings["min_withdrawal_units"]
+    if balance < minimum:
+        await message.answer(
+            "💸 <b>USDT BEP20 Withdrawal</b>\n\n"
+            "⚠️ Your balance is below the minimum withdrawal.\n"
+            f"Minimum: <b>{storage.format_units(minimum)} USDT</b>\n"
+            f"Your balance: <b>{storage.format_units(balance)} USDT</b>",
+            reply_markup=main_keyboard(message.from_user.id),
+            parse_mode="HTML",
+        )
+        return
+
+    await state.set_state(WithdrawalStates.waiting_for_amount)
     await message.answer(
-        "💸 <b>Withdrawal request</b>\n\n"
-        f"Available balance: <b>{storage.format_units(balance)} USDT</b>\n"
-        f"Minimum withdrawal: <b>{storage.format_units(settings['min_withdrawal_units'])} USDT</b>\n\n"
-        "Send the amount, network and wallet address in one message:\n"
-        "<code>0.50 BEP20 0xYour40CharacterWalletAddress</code>\n\n"
-        "Supported networks: BEP20, TRC20, TON, ERC20.\n"
-        "Check the selected network and wallet carefully. Your amount will be reserved while the request is pending.\n"
-        "Send /cancel to cancel before submitting.",
+        "💸💎 <b>USDT BEP20 Withdrawal</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"Minimum withdrawal: <b>{storage.format_units(minimum)} USDT</b>\n"
+        f"Available balance: <b>{storage.format_units(balance)} USDT</b>\n\n"
+        "✍️ <b>Please send the amount you want to withdraw.</b>\n"
+        "Example: <code>0.10</code>",
+        reply_markup=withdrawal_cancel_keyboard(),
         parse_mode="HTML",
     )
 
 
-@dp.message(
-    WithdrawalStates.waiting_for_details,
-    F.text,
-    ~F.text.startswith("💰"),
-    F.text != "🎁 Bonus",
-    F.text != "💸 Withdraw",
-    F.text != "👥 Referrals",
-    F.text != "🏆 Leaderboard",
-)
-async def receive_withdrawal(message: Message, state: FSMContext, bot: Bot):
+@dp.message(WithdrawalStates.waiting_for_amount, F.text)
+async def receive_withdrawal_amount(message: Message, state: FSMContext, bot: Bot):
     if not await ensure_access(message, bot):
+        await state.clear()
         return
-    parts = (message.text or "").strip().split()
-    if len(parts) != 3:
+
+    amount_units = storage.parse_amount_units((message.text or "").strip())
+    if amount_units is None:
         await message.answer(
-            "Send exactly: <code>amount NETWORK wallet_address</code>\n"
-            "Example: <code>0.50 BEP20 0xYour40CharacterWalletAddress</code>",
+            "⚠️ Invalid amount. Send a positive USDT amount, for example <code>0.10</code>.",
+            reply_markup=withdrawal_cancel_keyboard(),
             parse_mode="HTML",
         )
         return
-    amount_units = storage.parse_amount_units(parts[0])
-    network = parts[1].upper()
-    wallet = parts[2]
-    if amount_units is None:
-        await message.answer("Invalid amount. Use up to 4 decimal places, for example <code>0.50</code>.", parse_mode="HTML")
-        return
-    if not _valid_wallet(network, wallet):
+
+    settings = storage.get_settings()
+    minimum = settings["min_withdrawal_units"]
+    if amount_units < minimum:
         await message.answer(
-            "⚠️ The wallet address format does not match the selected network.\n"
-            "Please check the network/address pair and try again.",
+            f"⚠️ Minimum withdrawal is <b>{storage.format_units(minimum)} USDT</b>. "
+            "Please send a higher amount.",
+            reply_markup=withdrawal_cancel_keyboard(),
+            parse_mode="HTML",
         )
         return
+
+    balance = storage.get_balance_units(message.from_user.id)
+    if amount_units > balance:
+        await message.answer(
+            f"⚠️ Insufficient balance. You have <b>{storage.format_units(balance)} USDT</b>. "
+            "Please send a smaller amount.",
+            reply_markup=withdrawal_cancel_keyboard(),
+            parse_mode="HTML",
+        )
+        return
+
+    await state.update_data(withdrawal_amount_units=amount_units)
+    await state.set_state(WithdrawalStates.waiting_for_address)
+    await message.answer(
+        "✅ Amount accepted.\n\n"
+        f"Amount: <b>{storage.format_units(amount_units)} USDT</b>\n"
+        "Network: <b>BEP20 (BNB Smart Chain)</b>\n\n"
+        "📥 <b>Please send your BEP20 wallet address.</b>\n"
+        "Example: <code>0x1234... (42 characters total)</code>\n\n"
+        "⚠️ Make sure this is a USDT BEP20 address.",
+        reply_markup=withdrawal_cancel_keyboard(),
+        parse_mode="HTML",
+    )
+
+
+@dp.message(WithdrawalStates.waiting_for_address, F.text)
+async def receive_withdrawal_address(message: Message, state: FSMContext, bot: Bot):
+    if not await ensure_access(message, bot):
+        await state.clear()
+        return
+
+    wallet = (message.text or "").strip()
+    if not _valid_wallet("BEP20", wallet):
+        await message.answer(
+            "⚠️ This is not a valid BEP20 wallet address.\n"
+            "Please send a valid 0x address containing 42 characters.",
+            reply_markup=withdrawal_cancel_keyboard(),
+        )
+        return
+
+    data = await state.get_data()
+    amount_units = int(data.get("withdrawal_amount_units") or 0)
+    if amount_units <= 0:
+        await state.clear()
+        await message.answer(
+            "⚠️ Withdrawal session expired. Please press Withdraw again.",
+            reply_markup=main_keyboard(message.from_user.id),
+        )
+        return
+
     result, withdrawal_id, balance = storage.create_withdrawal(
-        message.from_user.id, amount_units, network, wallet
+        message.from_user.id, amount_units, "BEP20", wallet
     )
     if result == "below_minimum":
         settings = storage.get_settings()
-        await message.answer(f"Minimum withdrawal is <b>{storage.format_units(settings['min_withdrawal_units'])} USDT</b>.", parse_mode="HTML")
+        await state.clear()
+        await message.answer(
+            f"Minimum withdrawal is <b>{storage.format_units(settings['min_withdrawal_units'])} USDT</b>.",
+            reply_markup=main_keyboard(message.from_user.id),
+            parse_mode="HTML",
+        )
         return
     if result == "insufficient":
-        await message.answer(f"Insufficient balance. Available: <b>{storage.format_units(balance)} USDT</b>.", parse_mode="HTML")
+        await state.clear()
+        await message.answer(
+            f"⚠️ Insufficient balance. Your current balance is <b>{storage.format_units(balance)} USDT</b>.",
+            reply_markup=main_keyboard(message.from_user.id),
+            parse_mode="HTML",
+        )
         return
     if result != "created":
         await state.clear()
-        await message.answer("Please complete channel verification before submitting a withdrawal.")
+        await message.answer(
+            "Please complete channel verification before submitting a withdrawal.",
+            reply_markup=main_keyboard(message.from_user.id),
+        )
         return
+
     await state.clear()
     await message.answer(
-        f"✅ <b>Withdrawal request #{withdrawal_id} submitted.</b>\n\n"
+        "✅ <b>Withdrawal request submitted successfully!</b>\n\n"
+        f"Request ID: <b>#{withdrawal_id}</b>\n"
         f"Amount: <b>{storage.format_units(amount_units)} USDT</b>\n"
-        f"Network: <b>{html.escape(network)}</b>\n"
+        "Network: <b>BEP20</b>\n"
         "Status: <b>Pending</b>\n\n"
-        "The amount is reserved from your available balance. You will be notified when the request is approved, rejected or paid.",
+        "Your amount has been reserved. You will receive a message when the request is approved, rejected or paid.",
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML",
     )
@@ -474,8 +566,8 @@ async def lifespan(_app: FastAPI):
         logger.warning("Telegram bot disabled until BOT_TOKEN is configured.")
         yield
         return
-    if not REQUIRED_CHANNELS:
-        logger.warning("FORCE_CHANNELS is empty; Channel Force must be configured before public use.")
+    if not get_required_channels():
+        logger.warning("No Force Join channels are configured; add channels from the admin panel before public use.")
 
     active_bot = Bot(token=BOT_TOKEN)
     me = await active_bot.get_me()
