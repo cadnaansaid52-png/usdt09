@@ -483,10 +483,18 @@ async def lifespan(_app: FastAPI):
     ]
     await active_bot.set_my_commands(commands)
     for admin_id in sorted({int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip().isdigit()}):
-        await active_bot.set_my_commands(
-            commands + [BotCommand(command="admin", description="Open admin control panel")],
-            scope=BotCommandScopeChat(chat_id=admin_id),
-        )
+        try:
+            await active_bot.set_my_commands(
+                commands + [BotCommand(command="admin", description="Open admin control panel")],
+                scope=BotCommandScopeChat(chat_id=admin_id),
+            )
+        except TelegramAPIError:
+            # A stale or unreachable admin chat must not prevent the bot from starting.
+            logger.exception(
+                "Could not set admin commands for Telegram ID %s; "
+                "check ADMIN_IDS and ask that admin to send /start to the bot.",
+                admin_id,
+            )
 
     if WEBHOOK_URL:
         if not WEBHOOK_SECRET or not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", WEBHOOK_SECRET):
