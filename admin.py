@@ -296,7 +296,7 @@ def _normalize_force_channel_entry(value):
         if not re.fullmatch(r"https://t\.me/[A-Za-z0-9_+/-]+", join_url):
             return None
         title = parts[2] if len(parts) > 2 and parts[2] else raw_id
-        if len(title) > 60 or any(char in title for char in ";|\\r\\n"):
+        if len(title) > 60 or any(char in title for char in ";|\r\n"):
             return None
         return f"{raw_id}|{join_url}|{title}"
 
