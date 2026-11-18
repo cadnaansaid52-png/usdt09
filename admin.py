@@ -1,5 +1,6 @@
 import html
 import logging
+import re
 
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -267,7 +268,7 @@ async def show_force_channels(target):
         [_btn("➕ Add channel", "adm:channel:add")],
         [_btn("⬅️ Admin dashboard", "adm:dashboard")],
     ])
-    await _edit(target, "\\n".join(lines), InlineKeyboardMarkup(inline_keyboard=buttons))
+    await _edit(target, "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
 def _normalize_force_channel_entry(value):
@@ -285,14 +286,14 @@ def _normalize_force_channel_entry(value):
         return None
 
     if raw_id.startswith("https://t.me/"):
-        match = re.fullmatch(r"https://t\\.me/([A-Za-z0-9_]{5,32})/?", raw_id)
+        match = re.fullmatch(r"https://t\.me/([A-Za-z0-9_]{5,32})/?", raw_id)
         if match:
             return f"@{match.group(1)}"
         return None
 
     if re.fullmatch(r"-100[0-9]{5,18}", raw_id) and len(parts) >= 2:
         join_url = parts[1]
-        if not re.fullmatch(r"https://t\\.me/[A-Za-z0-9_+/-]+", join_url):
+        if not re.fullmatch(r"https://t\.me/[A-Za-z0-9_+/-]+", join_url):
             return None
         title = parts[2] if len(parts) > 2 and parts[2] else raw_id
         if len(title) > 60:
