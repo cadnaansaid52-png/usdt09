@@ -388,7 +388,17 @@ async def handle_withdraw(message: Message, bot: Bot, state: FSMContext):
     )
 
 
-@dp.message(WithdrawalStates.waiting_for_amount, F.text)
+@dp.message(
+    WithdrawalStates.waiting_for_amount,
+    F.text,
+    ~F.text.startswith("💰"),
+    F.text != "🎁 Bonus",
+    F.text != "💸 Withdraw",
+    F.text != "👥 Referrals",
+    F.text != "🏆 Leaderboard",
+    F.text != "❌ Cancel",
+    ~F.text.startswith("/"),
+)
 async def receive_withdrawal_amount(message: Message, state: FSMContext, bot: Bot):
     if not await ensure_access(message, bot):
         await state.clear()
@@ -438,7 +448,17 @@ async def receive_withdrawal_amount(message: Message, state: FSMContext, bot: Bo
     )
 
 
-@dp.message(WithdrawalStates.waiting_for_address, F.text)
+@dp.message(
+    WithdrawalStates.waiting_for_address,
+    F.text,
+    ~F.text.startswith("💰"),
+    F.text != "🎁 Bonus",
+    F.text != "💸 Withdraw",
+    F.text != "👥 Referrals",
+    F.text != "🏆 Leaderboard",
+    F.text != "❌ Cancel",
+    ~F.text.startswith("/"),
+)
 async def receive_withdrawal_address(message: Message, state: FSMContext, bot: Bot):
     if not await ensure_access(message, bot):
         await state.clear()
