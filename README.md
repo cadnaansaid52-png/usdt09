@@ -8,12 +8,12 @@ USDT09 is a Telegram rewards and referral bot backed by PostgreSQL.
 - Available balance shown in the main menu.
 - Configurable hourly bonus.
 - Referral links and verified-referral leaderboard.
-- Withdrawal requests with supported USDT networks: BEP20, TRC20, TON and ERC20.
+- Two-step USDT BEP20 withdrawal requests (amount first, then wallet address).
 - Withdrawal history with Pending, Approved, Rejected and Paid states.
 
 ## Manual withdrawal workflow
 
-1. A user submits an amount, network and wallet address.
+1. A user submits the withdrawal amount, then sends a BEP20 wallet address.
 2. The requested amount is reserved from the user's available balance.
 3. The request appears in the private admin panel as **Pending**.
 4. An administrator reviews and approves or rejects it.
@@ -33,6 +33,7 @@ Admin features:
 - User management: recent users, search by Telegram ID or username, user details, ban/unban.
 - Balance management: add or deduct USDT from a user's internal balance.
 - Withdrawal management: separate Pending, Approved, Rejected and Paid lists; approve, reject/refund, and mark paid with TXID.
+- Force Join channels: add or remove public channel usernames or private channel IDs and invite links from the admin panel.
 - Settings: bonus amount, bonus interval and minimum withdrawal.
 - Financial summary and transaction ledger records.
 
