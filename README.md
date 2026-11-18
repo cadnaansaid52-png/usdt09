@@ -48,7 +48,7 @@ Environment variables:
 - BOT_TOKEN — required Telegram bot token.
 - DATABASE_URL — required PostgreSQL connection string. On Render, use a private connection string from the same region.
 - ADMIN_IDS — comma-separated administrator Telegram IDs.
-- FORCE_CHANNELS — required channel entries. Public examples: @yourchannel or https://t.me/yourchannel. Private channel format: -1001234567890|https://t.me/+INVITE_CODE|Channel title.
+- FORCE_CHANNELS — optional initial Force Join channel entries. After startup, administrators can add or remove channels from the private admin panel. Public examples: @yourchannel or https://t.me/yourchannel. Private channel format: -1001234567890|https://t.me/+INVITE_CODE|Channel title.
 - WEBHOOK_URL — optional public service URL. When set, webhook mode is used.
 - WEBHOOK_SECRET — required when webhook mode is enabled.
 - LOG_LEVEL — optional; defaults to INFO.
