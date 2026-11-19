@@ -290,7 +290,7 @@ async def handle_verify(callback: CallbackQuery, bot: Bot):
 async def show_my_id(message: Message):
     user_id = message.from_user.id if message.from_user else "unknown"
     await message.answer(
-        f"Your Telegram ID: <code>{user_id}</code>\\n"
+        f"Your Telegram ID: <code>{user_id}</code>\n"
         f"This chat ID: <code>{message.chat.id}</code>",
         parse_mode="HTML",
     )
@@ -302,7 +302,7 @@ async def show_my_id(message: Message):
 @dp.message(Command("chatid", ignore_mention=True))
 async def show_group_chat_id(message: Message):
     await message.answer(
-        "🆔 <b>This Telegram chat ID:</b>\\n"
+        "🆔 <b>This Telegram chat ID:</b>\n"
         f"<code>{message.chat.id}</code>",
         parse_mode="HTML",
     )
@@ -625,6 +625,7 @@ async def lifespan(_app: FastAPI):
     active_bot = Bot(token=BOT_TOKEN)
     me = await active_bot.get_me()
     bot_username = me.username or ""
+    logger.info("Telegram bot identity confirmed: @%s (ID %s)", bot_username or "no_username", me.id)
 
     commands = [
         BotCommand(command="start", description="Start the bot"),
