@@ -288,8 +288,24 @@ async def handle_verify(callback: CallbackQuery, bot: Bot):
 
 @dp.message(Command("myid"))
 async def show_my_id(message: Message):
-    if message.from_user:
-        await message.answer(f"Your Telegram ID: <code>{message.from_user.id}</code>", parse_mode="HTML")
+    user_id = message.from_user.id if message.from_user else "unknown"
+    await message.answer(
+        f"Your Telegram ID: <code>{user_id}</code>\\n"
+        f"This chat ID: <code>{message.chat.id}</code>",
+        parse_mode="HTML",
+    )
+
+
+# Keep this diagnostic command on the root dispatcher and ignore mention mismatches.
+# This lets the group owner retrieve the actual chat ID even if the bot username
+# was typed with different capitalization or a similar-looking character.
+@dp.message(Command("chatid", ignore_mention=True))
+async def show_group_chat_id(message: Message):
+    await message.answer(
+        "🆔 <b>This Telegram chat ID:</b>\\n"
+        f"<code>{message.chat.id}</code>",
+        parse_mode="HTML",
+    )
 
 
 @dp.message(Command("help"))
