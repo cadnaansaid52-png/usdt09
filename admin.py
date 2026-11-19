@@ -356,6 +356,17 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
             await callback.message.answer("🔒 The bot owner is protected and cannot be removed.")
         else:
             result = storage.remove_admin(target_admin_id, owner_id)
+            if result == "ok":
+                try:
+                    await bot.set_my_commands(
+                        [
+                            BotCommand(command="start", description="Start the bot"),
+                            BotCommand(command="help", description="How to use the bot"),
+                        ],
+                        scope=BotCommandScopeChat(chat_id=target_admin_id),
+                    )
+                except TelegramAPIError:
+                    logger.info("Could not reset commands for removed admin %s", target_admin_id, exc_info=True)
             await callback.message.answer(
                 "✅ Administrator removed." if result == "ok" else "That ID is not an active administrator."
             )
