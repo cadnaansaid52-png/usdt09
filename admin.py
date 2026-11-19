@@ -154,6 +154,19 @@ async def show_dashboard(target):
     await _edit(target, text, admin_menu())
 
 
+@admin_router.message(Command("chatid"))
+async def show_chat_id(message: Message):
+    if message.chat.type == "private":
+        await message.answer("Open the private group where this bot is a member and send /chatid there.")
+        return
+    await message.answer(
+        "🆔 <b>Telegram group chat ID:</b>\n"
+        f"<code>{message.chat.id}</code>\n\n"
+        "Send this ID to the bot owner so the private admin activity log destination can be corrected.",
+        parse_mode="HTML",
+    )
+
+
 @admin_router.message(Command("admin"))
 async def admin_entry(message: Message, state: FSMContext):
     if not message.from_user or not is_admin(message.from_user.id):
