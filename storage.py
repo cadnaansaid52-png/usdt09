@@ -126,10 +126,12 @@ def init_db():
                     id BIGSERIAL PRIMARY KEY,
                     referred_user_id BIGINT NOT NULL UNIQUE REFERENCES users(telegram_id),
                     referrer_id BIGINT NOT NULL REFERENCES users(telegram_id),
-                    reward_units BIGINT NOT NULL CHECK (reward_units > 0),
+                    reward_units BIGINT NOT NULL CHECK (reward_units >= 0),
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
+            cur.execute("ALTER TABLE referral_rewards DROP CONSTRAINT IF EXISTS referral_rewards_reward_units_check")
+            cur.execute("ALTER TABLE referral_rewards ADD CONSTRAINT referral_rewards_reward_units_check CHECK (reward_units >= 0)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_users_referrer_verified ON users(referrer_id, verified)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at DESC)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_withdrawals_user_created ON withdrawals(telegram_id, created_at DESC)")
@@ -264,9 +266,6 @@ def _award_referral_reward(cur, referred_user_id):
     )
     setting_row = cur.fetchone()
     reward_units = int(setting_row[0]) if setting_row else DEFAULT_REFERRAL_REWARD_UNITS
-    if reward_units <= 0:
-        return False
-
     cur.execute(
         """
         INSERT INTO referral_rewards (referred_user_id, referrer_id, reward_units)
@@ -277,7 +276,7 @@ def _award_referral_reward(cur, referred_user_id):
         (int(referred_user_id), referrer_id, reward_units),
     )
     reward_row = cur.fetchone()
-    if not reward_row:
+    if not reward_row or int(reward_row[0]) <= 0:
         return False
 
     new_balance = int(referrer[0]) + int(reward_row[0])
