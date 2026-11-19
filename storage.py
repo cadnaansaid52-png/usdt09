@@ -189,7 +189,11 @@ def get_admin_ids():
     with db_session() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT telegram_id FROM bot_admins WHERE is_active = TRUE ORDER BY telegram_id")
-            return {int(row[0]) for row in cur.fetchall()}
+            admin_ids = {int(row[0]) for row in cur.fetchall()}
+    owner_id = get_owner_id()
+    if owner_id:
+        admin_ids.add(owner_id)
+    return admin_ids
 
 
 def is_admin(telegram_id):
@@ -225,8 +229,9 @@ def add_admin(telegram_id, added_by):
             return "ok"
 
 
-def remove_admin(telegram_id, owner_id):
+def remove_admin(telegram_id, owner_id=None):
     telegram_id = int(telegram_id)
+    owner_id = owner_id or get_owner_id()
     if owner_id and telegram_id == int(owner_id):
         return "owner_protected"
     with db_session() as conn:
