@@ -349,6 +349,7 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
             "The user can get their ID by sending /myid to the bot.",
         )
     elif action == "admin" and len(data) == 4 and data[2] == "remove" and data[3].isdigit():
+        await state.clear()
         target_admin_id = int(data[3])
         owner_id = _owner_id()
         if owner_id and target_admin_id == owner_id:
