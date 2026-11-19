@@ -20,20 +20,15 @@ admin_router = Router()
 
 
 def _admin_ids():
-    raw = __import__("os").getenv("ADMIN_IDS", "")
-    ids = set()
-    for value in raw.split(","):
-        value = value.strip()
-        if value.isdigit() and int(value) > 0:
-            ids.add(int(value))
-    legacy = __import__("os").getenv("ADMIN_ID", "").strip()
-    if legacy.isdigit() and int(legacy) > 0:
-        ids.add(int(legacy))
-    return ids
+    return storage.get_admin_ids()
 
 
 def is_admin(user_id):
-    return int(user_id or 0) in _admin_ids()
+    return storage.is_admin(user_id)
+
+
+def _owner_id():
+    return storage.get_owner_id()
 
 
 class AdminStates(StatesGroup):
@@ -43,6 +38,7 @@ class AdminStates(StatesGroup):
     waiting_txid = State()
     waiting_reject_note = State()
     waiting_channel = State()
+    waiting_admin_id = State()
 
 
 def _btn(text, data):
@@ -54,6 +50,7 @@ def admin_menu():
         [_btn("📊 Dashboard", "adm:dashboard"), _btn("👥 Users", "adm:users")],
         [_btn("🔎 Search user", "adm:search"), _btn("💸 Withdrawals", "adm:withdrawals")],
         [_btn("📢 Force Join channels", "adm:channels")],
+        [_btn("👮 Admins", "adm:admins")],
         [_btn("⚙️ Settings", "adm:settings"), _btn("📈 Ledger summary", "adm:ledger")],
     ])
 
@@ -230,17 +227,44 @@ async def show_settings(target):
         "━━━━━━━━━━━━━━━━━━\n"
         f"🎁 Bonus amount: <b>{_fmt(settings['bonus_units'])} USDT</b>\n"
         f"⏱ Bonus interval: <b>{settings['bonus_interval_seconds']} seconds</b>\n"
-        f"⬇️ Minimum withdrawal: <b>{_fmt(settings['min_withdrawal_units'])} USDT</b>\n\n"
+        f"⬇️ Minimum withdrawal: <b>{_fmt(settings['min_withdrawal_units'])} USDT</b>\n"
+        f"👥 Referral reward: <b>{_fmt(settings['referral_reward_units'])} USDT</b> per verified referral\n\n"
         "Choose a value to update. Amounts support up to 4 decimal places."
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [_btn("🎁 Change bonus amount", "adm:set:bonus_units")],
         [_btn("⏱ Change bonus interval", "adm:set:bonus_interval_seconds")],
         [_btn("⬇️ Change minimum withdrawal", "adm:set:min_withdrawal_units")],
+        [_btn("👥 Change referral reward", "adm:set:referral_reward_units")],
         [_btn("📢 Manage Force Join channels", "adm:channels")],
         [_btn("⬅️ Dashboard", "adm:dashboard")],
     ])
     await _edit(target, text, keyboard)
+
+
+async def show_admins(target):
+    admins = sorted(storage.get_admin_ids())
+    owner_id = _owner_id()
+    lines = [
+        "👮 <b>ADMIN MANAGEMENT</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        "Add administrators by Telegram ID. The bot owner is protected and cannot be removed.",
+        "",
+    ]
+    buttons = []
+    if not admins:
+        lines.append("No administrators are registered.")
+    for admin_id in admins:
+        if owner_id and admin_id == owner_id:
+            lines.append(f"🔒 <b>OWNER</b> · <code>{admin_id}</code>")
+        else:
+            lines.append(f"✅ Admin · <code>{admin_id}</code>")
+            buttons.append([_btn(f"🗑 Remove {admin_id}", f"adm:admin:remove:{admin_id}")])
+    buttons.extend([
+        [_btn("➕ Add admin", "adm:admin:add")],
+        [_btn("⬅️ Admin dashboard", "adm:dashboard")],
+    ])
+    await _edit(target, "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
 def _force_channel_entries():
@@ -312,7 +336,27 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
     action = data[1] if len(data) > 1 else ""
     await callback.answer()
 
-    if action == "channels":
+    if action == "admins":
+        await state.clear()
+        await show_admins(callback)
+    elif action == "admin" and len(data) == 3 and data[2] == "add":
+        await state.set_state(AdminStates.waiting_admin_id)
+        await callback.message.answer(
+            "Send the Telegram ID of the new administrator.\n"
+            "The user can get their ID by sending /myid to the bot.",
+        )
+    elif action == "admin" and len(data) == 4 and data[2] == "remove" and data[3].isdigit():
+        target_admin_id = int(data[3])
+        owner_id = _owner_id()
+        if owner_id and target_admin_id == owner_id:
+            await callback.message.answer("🔒 The bot owner is protected and cannot be removed.")
+        else:
+            result = storage.remove_admin(target_admin_id, owner_id)
+            await callback.message.answer(
+                "✅ Administrator removed." if result == "ok" else "That ID is not an active administrator."
+            )
+        await show_admins(callback)
+    elif action == "channels":
         await state.clear()
         await show_force_channels(callback)
     elif action == "channel" and len(data) == 3 and data[2] == "add":
@@ -402,10 +446,15 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
     elif action == "settings":
         await state.clear()
         await show_settings(callback)
-    elif action == "set" and len(data) == 3 and data[2] in {"bonus_units", "bonus_interval_seconds", "min_withdrawal_units"}:
+    elif action == "set" and len(data) == 3 and data[2] in {"bonus_units", "bonus_interval_seconds", "min_withdrawal_units", "referral_reward_units"}:
         await state.set_state(AdminStates.waiting_setting)
         await state.update_data(setting_key=data[2])
-        prompt = "USDT amount (example 0.05)." if data[2] != "bonus_interval_seconds" else "Interval in seconds (minimum 60)."
+        if data[2] == "bonus_interval_seconds":
+            prompt = "Interval in seconds (minimum 60)."
+        elif data[2] == "referral_reward_units":
+            prompt = "Referral reward per verified referral in USDT (example 0.01). Send 0 to disable rewards."
+        else:
+            prompt = "USDT amount (example 0.05)."
         await callback.message.answer(prompt)
     elif action == "ledger":
         stats = storage.get_dashboard_stats()
@@ -418,6 +467,37 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
             f"Rejected total: <b>{_fmt(stats['rejected_units'])} USDT</b>",
             back_dashboard(),
         )
+
+
+@admin_router.message(AdminStates.waiting_admin_id, F.text, ~F.text.startswith("/"))
+async def receive_admin_id(message: Message, state: FSMContext):
+    if not message.from_user or not is_admin(message.from_user.id):
+        await state.clear()
+        return
+
+    raw_id = (message.text or "").strip()
+    if not raw_id.isdigit() or not 0 < int(raw_id) <= 9223372036854775807:
+        await message.answer("⚠️ Send a valid positive Telegram numeric ID.")
+        return
+
+    target_id = int(raw_id)
+    if storage.is_admin(target_id):
+        await state.clear()
+        await message.answer("This user is already an administrator.")
+        await show_admins(message)
+        return
+
+    result = storage.add_admin(target_id, message.from_user.id)
+    await state.clear()
+    if result == "ok":
+        await message.answer(
+            f"✅ Administrator <code>{target_id}</code> added. "
+            "They can open the private panel with /admin.",
+            parse_mode="HTML",
+        )
+    else:
+        await message.answer("⚠️ I couldn't add that administrator.")
+    await show_admins(message)
 
 
 @admin_router.message(AdminStates.waiting_channel, F.text, ~F.text.startswith("/"))
