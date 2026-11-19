@@ -214,6 +214,19 @@ async def handle_start(message: Message, command: CommandObject, bot: Bot, state
         await message.answer("⛔ Your account is restricted. Please contact support.")
         return
 
+    if is_admin(user.id):
+        try:
+            await bot.set_my_commands(
+                [
+                    BotCommand(command="start", description="Start the bot"),
+                    BotCommand(command="help", description="How to use the bot"),
+                    BotCommand(command="admin", description="Open admin control panel"),
+                ],
+                scope=BotCommandScopeChat(chat_id=user.id),
+            )
+        except TelegramAPIError:
+            logger.exception("Could not refresh admin commands for Telegram ID %s", user.id)
+
     referrer_id = None
     match = re.fullmatch(r"ref_(\d{1,19})", (command.args or "").strip())
     if match:
