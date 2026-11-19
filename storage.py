@@ -352,9 +352,10 @@ def register_user(telegram_id, username, first_name, last_name, referrer_id=None
 
     with db_session() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT telegram_id FROM users WHERE telegram_id = %s", (telegram_id,))
+            cur.execute("SELECT verified FROM users WHERE telegram_id = %s", (telegram_id,))
             exists = cur.fetchone()
             if exists:
+                was_verified = bool(exists[0])
                 # First eligible inviter wins. This also handles users who initially
                 # opened /start without a referral link but were not yet verified.
                 cur.execute("""
@@ -370,7 +371,7 @@ def register_user(telegram_id, username, first_name, last_name, referrer_id=None
                     username, first_name or "", last_name or "",
                     bool(verified), safe_referrer, telegram_id
                 ))
-                if verified:
+                if verified and not was_verified:
                     _award_referral_reward(cur, telegram_id)
                 return False
 
