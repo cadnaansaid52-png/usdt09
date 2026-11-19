@@ -11,6 +11,7 @@ UNITS_PER_USDT = 10000
 DEFAULT_BONUS_UNITS = 500
 DEFAULT_BONUS_INTERVAL = 3600
 DEFAULT_MIN_WITHDRAWAL_UNITS = 500
+DEFAULT_REFERRAL_REWARD_UNITS = 100
 
 
 def _connect():
@@ -112,6 +113,23 @@ def init_db():
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS bot_admins (
+                    telegram_id BIGINT PRIMARY KEY,
+                    added_by BIGINT,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS referral_rewards (
+                    id BIGSERIAL PRIMARY KEY,
+                    referred_user_id BIGINT NOT NULL UNIQUE REFERENCES users(telegram_id),
+                    referrer_id BIGINT NOT NULL REFERENCES users(telegram_id),
+                    reward_units BIGINT NOT NULL CHECK (reward_units > 0),
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_users_referrer_verified ON users(referrer_id, verified)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at DESC)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_withdrawals_user_created ON withdrawals(telegram_id, created_at DESC)")
@@ -121,6 +139,7 @@ def init_db():
                 "bonus_units": str(DEFAULT_BONUS_UNITS),
                 "bonus_interval_seconds": str(DEFAULT_BONUS_INTERVAL),
                 "min_withdrawal_units": str(DEFAULT_MIN_WITHDRAWAL_UNITS),
+                "referral_reward_units": str(DEFAULT_REFERRAL_REWARD_UNITS),
                 "maintenance": "OFF",
                 "force_channels": os.getenv("FORCE_CHANNELS", "").strip(),
             }
@@ -129,6 +148,151 @@ def init_db():
                     "INSERT INTO settings (setting_key, setting_value) VALUES (%s, %s) ON CONFLICT (setting_key) DO NOTHING",
                     (key, value),
                 )
+
+            # Seed the legacy environment admins once; later removals are kept in DB.
+            configured_admins = []
+            for raw_id in os.getenv("ADMIN_IDS", "").split(","):
+                raw_id = raw_id.strip()
+                if raw_id.isdigit() and 0 < int(raw_id) <= 9223372036854775807:
+                    configured_admins.append(int(raw_id))
+            for env_key in ("BOT_OWNER_ID", "ADMIN_ID"):
+                raw_id = os.getenv(env_key, "").strip()
+                if raw_id.isdigit() and 0 < int(raw_id) <= 9223372036854775807:
+                    configured_admins.append(int(raw_id))
+            for admin_id in set(configured_admins):
+                cur.execute(
+                    """
+                    INSERT INTO bot_admins (telegram_id, added_by, is_active)
+                    VALUES (%s, NULL, TRUE)
+                    ON CONFLICT (telegram_id) DO NOTHING
+                    """,
+                    (admin_id,),
+                )
+
+
+def get_owner_id():
+    """Resolve the protected owner: BOT_OWNER_ID, legacy ADMIN_ID, then first ADMIN_IDS entry."""
+    for env_key in ("BOT_OWNER_ID", "ADMIN_ID"):
+        raw_id = os.getenv(env_key, "").strip()
+        if raw_id.isdigit() and 0 < int(raw_id) <= 9223372036854775807:
+            return int(raw_id)
+    for raw_id in os.getenv("ADMIN_IDS", "").split(","):
+        raw_id = raw_id.strip()
+        if raw_id.isdigit() and 0 < int(raw_id) <= 9223372036854775807:
+            return int(raw_id)
+    return None
+
+
+def get_admin_ids():
+    with db_session() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT telegram_id FROM bot_admins WHERE is_active = TRUE ORDER BY telegram_id")
+            return {int(row[0]) for row in cur.fetchall()}
+
+
+def is_admin(telegram_id):
+    telegram_id = int(telegram_id or 0)
+    owner_id = get_owner_id()
+    if owner_id and telegram_id == owner_id:
+        return True
+    with db_session() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM bot_admins WHERE telegram_id = %s AND is_active = TRUE",
+                (telegram_id,),
+            )
+            return cur.fetchone() is not None
+
+
+def add_admin(telegram_id, added_by):
+    telegram_id = int(telegram_id)
+    if telegram_id <= 0 or telegram_id > 9223372036854775807:
+        return "invalid"
+    with db_session() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO bot_admins (telegram_id, added_by, is_active)
+                VALUES (%s, %s, TRUE)
+                ON CONFLICT (telegram_id) DO UPDATE
+                SET added_by = EXCLUDED.added_by, is_active = TRUE
+                RETURNING telegram_id
+                """,
+                (telegram_id, int(added_by)),
+            )
+            return "ok"
+
+
+def remove_admin(telegram_id, owner_id):
+    telegram_id = int(telegram_id)
+    if owner_id and telegram_id == int(owner_id):
+        return "owner_protected"
+    with db_session() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE bot_admins SET is_active = FALSE WHERE telegram_id = %s AND is_active = TRUE",
+                (telegram_id,),
+            )
+            return "ok" if cur.rowcount else "not_found"
+
+
+def _award_referral_reward(cur, referred_user_id):
+    cur.execute(
+        """
+        SELECT referrer_id, verified, is_banned
+        FROM users
+        WHERE telegram_id = %s
+        FOR UPDATE
+        """,
+        (int(referred_user_id),),
+    )
+    referred = cur.fetchone()
+    if not referred or not referred[0] or not referred[1] or referred[2]:
+        return False
+
+    referrer_id = int(referred[0])
+    cur.execute(
+        "SELECT balance_units, verified, is_banned FROM users WHERE telegram_id = %s FOR UPDATE",
+        (referrer_id,),
+    )
+    referrer = cur.fetchone()
+    if not referrer or not referrer[1] or referrer[2]:
+        return False
+
+    cur.execute(
+        "SELECT setting_value FROM settings WHERE setting_key = 'referral_reward_units'"
+    )
+    setting_row = cur.fetchone()
+    reward_units = int(setting_row[0]) if setting_row else DEFAULT_REFERRAL_REWARD_UNITS
+    if reward_units <= 0:
+        return False
+
+    cur.execute(
+        """
+        INSERT INTO referral_rewards (referred_user_id, referrer_id, reward_units)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (referred_user_id) DO NOTHING
+        RETURNING reward_units
+        """,
+        (int(referred_user_id), referrer_id, reward_units),
+    )
+    reward_row = cur.fetchone()
+    if not reward_row:
+        return False
+
+    new_balance = int(referrer[0]) + int(reward_row[0])
+    cur.execute(
+        "UPDATE users SET balance_units = %s WHERE telegram_id = %s",
+        (new_balance, referrer_id),
+    )
+    cur.execute(
+        """
+        INSERT INTO balance_ledger (telegram_id, amount_units, reason, reference)
+        VALUES (%s, %s, 'referral_reward', %s)
+        """,
+        (referrer_id, int(reward_row[0]), f"referral:{int(referred_user_id)}"),
+    )
+    return True
 
 
 def get_setting(key, default=None):
@@ -140,7 +304,7 @@ def get_setting(key, default=None):
 
 
 def update_setting(key, value):
-    allowed = {"bonus_units", "bonus_interval_seconds", "min_withdrawal_units", "maintenance", "force_channels"}
+    allowed = {"bonus_units", "bonus_interval_seconds", "min_withdrawal_units", "referral_reward_units", "maintenance", "force_channels"}
     if key not in allowed:
         raise ValueError("Unknown setting.")
     with db_session() as conn:
@@ -160,6 +324,7 @@ def get_settings():
         "bonus_units": int(values.get("bonus_units", DEFAULT_BONUS_UNITS)),
         "bonus_interval_seconds": int(values.get("bonus_interval_seconds", DEFAULT_BONUS_INTERVAL)),
         "min_withdrawal_units": int(values.get("min_withdrawal_units", DEFAULT_MIN_WITHDRAWAL_UNITS)),
+        "referral_reward_units": int(values.get("referral_reward_units", DEFAULT_REFERRAL_REWARD_UNITS)),
         "maintenance": values.get("maintenance", "OFF"),
     }
 
@@ -206,6 +371,8 @@ def register_user(telegram_id, username, first_name, last_name, referrer_id=None
                     username, first_name or "", last_name or "",
                     bool(verified), safe_referrer, telegram_id
                 ))
+                if verified:
+                    _award_referral_reward(cur, telegram_id)
                 return False
 
             cur.execute("""
@@ -217,6 +384,8 @@ def register_user(telegram_id, username, first_name, last_name, referrer_id=None
                 telegram_id, username, first_name or "", last_name or "",
                 safe_referrer, bool(verified), now
             ))
+            if verified:
+                _award_referral_reward(cur, telegram_id)
             return True
 
 
