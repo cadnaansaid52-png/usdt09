@@ -1,6 +1,7 @@
 import html
 import logging
 import re
+from datetime import datetime, timezone
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError
@@ -20,6 +21,50 @@ import storage
 
 logger = logging.getLogger("usdt09.admin")
 admin_router = Router()
+
+# Private group used for detailed administrator activity notifications.
+ADMIN_AUDIT_CHAT_ID = int(__import__("os").getenv("ADMIN_AUDIT_CHAT_ID", "-5399347693"))
+
+
+async def _notify_admin_change(bot: Bot, actor, action: str, details: str, target_user_id=None):
+    actor_id = int(getattr(actor, "id", 0) or 0)
+    actor_name = " ".join(
+        part for part in (
+            getattr(actor, "first_name", "") or "",
+            getattr(actor, "last_name", "") or "",
+        ) if part
+    ).strip() or "Unknown admin"
+    actor_username = getattr(actor, "username", None)
+    actor_label = actor_name
+    if actor_username:
+        actor_label += f" (@{actor_username})"
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    detail_text = html.escape(str(details or "—"))[:2600]
+    message_text = (
+        "🔔 <b>USDT09 ADMIN ACTIVITY</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"👮 <b>Admin:</b> {html.escape(actor_label)}\n"
+        f"🆔 <b>Admin ID:</b> <code>{actor_id}</code>\n"
+        f"🛠 <b>Action:</b> {html.escape(action)}\n"
+        + (f"🎯 <b>Target ID:</b> <code>{int(target_user_id)}</code>\n" if target_user_id else "")
+        + f"🕒 <b>Time:</b> <code>{timestamp}</code>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"📋 <b>Details</b>\n{detail_text}"
+    )
+    try:
+        await bot.send_message(
+            chat_id=ADMIN_AUDIT_CHAT_ID,
+            text=message_text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except Exception:
+        # Do not undo a successful admin change if the log group is unavailable.
+        logger.exception(
+            "Could not send admin activity notification to chat %s",
+            ADMIN_AUDIT_CHAT_ID,
+        )
 
 
 def _admin_ids():
@@ -370,6 +415,14 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
             await callback.message.answer(
                 "✅ Administrator removed." if result == "ok" else "That ID is not an active administrator."
             )
+            if result == "ok":
+                await _notify_admin_change(
+                    bot,
+                    callback.from_user,
+                    "Administrator removed",
+                    f"Removed administrator Telegram ID: {target_admin_id}",
+                    target_user_id=target_admin_id,
+                )
         await show_admins(callback)
     elif action == "channels":
         await state.clear()
@@ -388,6 +441,12 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
         if 0 <= index < len(entries):
             removed = entries.pop(index)
             storage.update_setting("force_channels", ";".join(entries))
+            await _notify_admin_change(
+                bot,
+                callback.from_user,
+                "Force Join channel removed",
+                f"Removed channel entry: {removed}",
+            )
             await callback.message.answer(f"✅ Removed Force Join channel: <code>{html.escape(removed)}</code>", parse_mode="HTML")
         await show_force_channels(callback)
     elif action == "dashboard":
@@ -408,6 +467,14 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
             await callback.answer("You cannot ban an admin.", show_alert=True)
             return
         changed = storage.set_user_banned(target_id, action == "ban", callback.from_user.id)
+        if changed:
+            await _notify_admin_change(
+                bot,
+                callback.from_user,
+                "User banned" if action == "ban" else "User unbanned",
+                f"Target Telegram ID: {target_id}",
+                target_user_id=target_id,
+            )
         try:
             await bot.send_message(target_id, "Your USDT09 account has been banned." if action == "ban" else "Your USDT09 account has been unbanned.")
         except Exception:
@@ -434,6 +501,20 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
         result = storage.set_withdrawal_status(wid, "approved", callback.from_user.id)
         if result == "ok":
             row = storage.get_withdrawal(wid)
+            await _notify_admin_change(
+                bot,
+                callback.from_user,
+                "Withdrawal approved",
+                (
+                    f"Request ID: #{wid}\n"
+                    f"User ID: {row['telegram_id']}\n"
+                    f"Amount: {_fmt(row['amount_units'])} USDT\n"
+                    f"Network: {row['network']}\n"
+                    f"Wallet address: {row['wallet_address']}\n"
+                    "Status: pending → approved"
+                ),
+                target_user_id=row["telegram_id"],
+            )
             try:
                 await bot.send_message(row["telegram_id"], f"✅ Your withdrawal #{wid} has been approved and is awaiting manual transfer.")
             except Exception:
@@ -520,6 +601,13 @@ async def receive_admin_id(message: Message, state: FSMContext, bot: Bot):
                 target_id,
                 exc_info=True,
             )
+        await _notify_admin_change(
+            bot,
+            message.from_user,
+            "Administrator added",
+            f"Added administrator Telegram ID: {target_id}",
+            target_user_id=target_id,
+        )
         await message.answer(
             f"✅ Administrator <code>{target_id}</code> added. "
             "Ask them to open the bot and send /start, then use /admin.",
@@ -531,7 +619,7 @@ async def receive_admin_id(message: Message, state: FSMContext, bot: Bot):
 
 
 @admin_router.message(AdminStates.waiting_channel, F.text, ~F.text.startswith("/"))
-async def receive_force_channel(message: Message, state: FSMContext):
+async def receive_force_channel(message: Message, state: FSMContext, bot: Bot):
     if not message.from_user or not is_admin(message.from_user.id):
         await state.clear()
         return
@@ -556,6 +644,12 @@ async def receive_force_channel(message: Message, state: FSMContext):
 
     entries.append(entry)
     storage.update_setting("force_channels", ";".join(entries))
+    await _notify_admin_change(
+        bot,
+        message.from_user,
+        "Force Join channel added",
+        f"Added channel entry: {entry}",
+    )
     await state.clear()
     await message.answer(
         "✅ Force Join channel added. The bot must be an administrator in this channel.",
@@ -575,7 +669,7 @@ async def receive_search(message: Message, state: FSMContext):
 
 
 @admin_router.message(AdminStates.waiting_balance)
-async def receive_balance_adjustment(message: Message, state: FSMContext):
+async def receive_balance_adjustment(message: Message, state: FSMContext, bot: Bot):
     if not message.from_user or not is_admin(message.from_user.id):
         await state.clear()
         return
@@ -585,8 +679,22 @@ async def receive_balance_adjustment(message: Message, state: FSMContext):
         await message.answer("Invalid amount. Send a positive amount, e.g. <code>0.50</code>.", parse_mode="HTML")
         return
     delta = amount if data.get("balance_action") == "add" else -amount
-    result, balance = storage.adjust_balance(data["balance_user_id"], delta, "admin_manual_adjustment", message.from_user.id)
+    target_id = int(data["balance_user_id"])
+    previous_balance = storage.get_balance_units(target_id)
+    result, balance = storage.adjust_balance(target_id, delta, "admin_manual_adjustment", message.from_user.id)
     if result == "ok":
+        await _notify_admin_change(
+            bot,
+            message.from_user,
+            "User balance increased" if delta > 0 else "User balance decreased",
+            (
+                f"Target Telegram ID: {target_id}\n"
+                f"Change: {'+' if delta > 0 else '-'}{_fmt(abs(delta))} USDT\n"
+                f"Previous balance: {_fmt(previous_balance)} USDT\n"
+                f"New balance: {_fmt(balance)} USDT"
+            ),
+            target_user_id=target_id,
+        )
         await state.clear()
         await message.answer(f"✅ Balance updated. New balance: <b>{_fmt(balance)} USDT</b>.", parse_mode="HTML")
         await show_user(message, data["balance_user_id"])
@@ -598,7 +706,7 @@ async def receive_balance_adjustment(message: Message, state: FSMContext):
 
 
 @admin_router.message(AdminStates.waiting_setting)
-async def receive_setting(message: Message, state: FSMContext):
+async def receive_setting(message: Message, state: FSMContext, bot: Bot):
     if not message.from_user or not is_admin(message.from_user.id):
         await state.clear()
         return
@@ -617,7 +725,26 @@ async def receive_setting(message: Message, state: FSMContext):
         if value is None:
             await message.answer("Invalid amount. Use up to 4 decimal places. Referral reward can also be set to 0 to disable it.")
             return
+    old_value = storage.get_settings().get(key)
     storage.update_setting(key, value)
+    if key == "bonus_interval_seconds":
+        old_display = f"{old_value} seconds"
+        new_display = f"{value} seconds"
+        setting_label = "Bonus interval"
+    else:
+        old_display = f"{_fmt(old_value)} USDT"
+        new_display = f"{_fmt(value)} USDT"
+        setting_label = {
+            "bonus_units": "Bonus amount",
+            "min_withdrawal_units": "Minimum withdrawal",
+            "referral_reward_units": "Referral reward rate",
+        }.get(key, key)
+    await _notify_admin_change(
+        bot,
+        message.from_user,
+        f"Setting changed: {setting_label}",
+        f"Previous value: {old_display}\nNew value: {new_display}",
+    )
     await state.clear()
     await message.answer("✅ Setting saved.")
     await show_settings(message)
@@ -640,6 +767,21 @@ async def receive_txid(message: Message, state: FSMContext, bot):
         return
     await state.clear()
     row = storage.get_withdrawal(wid)
+    await _notify_admin_change(
+        bot,
+        message.from_user,
+        "Withdrawal marked paid",
+        (
+            f"Request ID: #{wid}\n"
+            f"User ID: {row['telegram_id']}\n"
+            f"Amount: {_fmt(row['amount_units'])} USDT\n"
+            f"Network: {row['network']}\n"
+            f"Wallet address: {row['wallet_address']}\n"
+            f"TXID: {txid}\n"
+            "Status: approved → paid"
+        ),
+        target_user_id=row["telegram_id"],
+    )
     try:
         await bot.send_message(row["telegram_id"], f"🟢 Your withdrawal #{wid} is marked PAID.\nTXID: <code>{html.escape(txid)}</code>", parse_mode="HTML")
     except Exception:
@@ -667,6 +809,21 @@ async def receive_reject_note(message: Message, state: FSMContext, bot):
         return
     await state.clear()
     row = storage.get_withdrawal(wid)
+    await _notify_admin_change(
+        bot,
+        message.from_user,
+        "Withdrawal rejected and refunded",
+        (
+            f"Request ID: #{wid}\n"
+            f"User ID: {row['telegram_id']}\n"
+            f"Refunded amount: {_fmt(row['amount_units'])} USDT\n"
+            f"Network: {row['network']}\n"
+            f"Wallet address: {row['wallet_address']}\n"
+            f"Reason: {note or 'Not specified'}\n"
+            "Status: pending/approved → rejected"
+        ),
+        target_user_id=row["telegram_id"],
+    )
     try:
         await bot.send_message(row["telegram_id"], f"🔴 Your withdrawal #{wid} was rejected. The reserved amount has been returned to your balance.\nReason: {html.escape(note or 'Not specified')}", parse_mode="HTML")
     except Exception:
