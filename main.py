@@ -533,10 +533,12 @@ async def handle_referrals(message: Message, bot: Bot, state: FSMContext):
         return
     me = await bot.get_me()
     count = storage.get_referral_count(message.from_user.id)
+    referral_reward = storage.get_settings()["referral_reward_units"]
     invite_link = f"https://t.me/{me.username}?start=ref_{message.from_user.id}"
     await message.answer(
         "👥 <b>Your invitation link</b>\n\n"
-        "Invite friends to join USDT09.\n\n"
+        "Invite friends to join USDT09.\n"
+        f"💵 Reward: <b>{storage.format_units(referral_reward)} USDT</b> per verified referral.\n\n"
         f"🔗 <code>{html.escape(invite_link)}</code>\n"
         f"✅ Verified referrals: <b>{count}</b>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -600,7 +602,7 @@ async def lifespan(_app: FastAPI):
         BotCommand(command="help", description="How to use the bot"),
     ]
     await active_bot.set_my_commands(commands)
-    for admin_id in sorted({int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip().isdigit()}):
+    for admin_id in sorted(storage.get_admin_ids()):
         try:
             await active_bot.set_my_commands(
                 commands + [BotCommand(command="admin", description="Open admin control panel")],
