@@ -7,7 +7,7 @@ USDT09 is a Telegram rewards and referral bot backed by PostgreSQL.
 - Required-channel join and subscription verification.
 - Available balance shown in the main menu.
 - Configurable hourly bonus.
-- Referral links and verified-referral leaderboard.
+- Referral links, a configurable USDT reward for each newly verified referral (default 0.01 USDT), and a verified-referral leaderboard.
 - Two-step USDT BEP20 withdrawal requests (amount first, then wallet address).
 - Withdrawal history with Pending, Approved, Rejected and Paid states.
 
@@ -31,6 +31,8 @@ Admin features:
 
 - Dashboard: users, daily signups, banned users, available balances and withdrawal totals by status.
 - User management: recent users, search by Telegram ID or username, user details, ban/unban.
+- Admin management: add and remove administrators by Telegram ID. The configured bot owner cannot be removed.
+- Referral rewards: credit the inviter's balance once when a referred user first becomes verified; the reward rate is configurable in Settings.
 - Balance management: add or deduct USDT from a user's internal balance.
 - Withdrawal management: separate Pending, Approved, Rejected and Paid lists; approve, reject/refund, and mark paid with TXID.
 - Force Join channels: add or remove public channel usernames or private channel IDs and invite links from the admin panel.
@@ -47,7 +49,8 @@ Environment variables:
 
 - BOT_TOKEN — required Telegram bot token.
 - DATABASE_URL — required PostgreSQL connection string. On Render, use a private connection string from the same region.
-- ADMIN_IDS — comma-separated administrator Telegram IDs.
+- ADMIN_IDS — comma-separated initial administrator Telegram IDs.
+- BOT_OWNER_ID — the bot owner's Telegram ID. Set this explicitly so the owner is protected from administrator removal. If omitted, the bot uses legacy ADMIN_ID, then the first ID in ADMIN_IDS.
 - FORCE_CHANNELS — optional initial Force Join channel entries. After startup, administrators can add or remove channels from the private admin panel. Public examples: @yourchannel or https://t.me/yourchannel. Private channel format: -1001234567890|https://t.me/+INVITE_CODE|Channel title.
 - WEBHOOK_URL — optional public service URL. When set, webhook mode is used.
 - WEBHOOK_SECRET — required when webhook mode is enabled.
