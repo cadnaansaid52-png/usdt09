@@ -598,7 +598,7 @@ async def receive_setting(message: Message, state: FSMContext):
             await message.answer("Send whole seconds from 60 to 2592000 (30 days).")
             return
         value = int(raw)
-    elif key == "referral_reward_units" and re.fullmatch(r"0+(?:\\.0{1,4})?", raw):
+    elif key == "referral_reward_units" and re.fullmatch(r"0+(?:\.0{1,4})?", raw):
         value = 0
     else:
         value = storage.parse_amount_units(raw)
