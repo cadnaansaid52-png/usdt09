@@ -2,11 +2,14 @@ import html
 import logging
 import re
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
+    BotCommand,
+    BotCommandScopeChat,
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -470,7 +473,7 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
 
 
 @admin_router.message(AdminStates.waiting_admin_id, F.text, ~F.text.startswith("/"))
-async def receive_admin_id(message: Message, state: FSMContext):
+async def receive_admin_id(message: Message, state: FSMContext, bot: Bot):
     if not message.from_user or not is_admin(message.from_user.id):
         await state.clear()
         return
@@ -490,9 +493,24 @@ async def receive_admin_id(message: Message, state: FSMContext):
     result = storage.add_admin(target_id, message.from_user.id)
     await state.clear()
     if result == "ok":
+        try:
+            await bot.set_my_commands(
+                [
+                    BotCommand(command="start", description="Start the bot"),
+                    BotCommand(command="help", description="How to use the bot"),
+                    BotCommand(command="admin", description="Open admin control panel"),
+                ],
+                scope=BotCommandScopeChat(chat_id=target_id),
+            )
+        except TelegramAPIError:
+            logger.info(
+                "Admin %s added; their chat commands will be set after they open the bot.",
+                target_id,
+                exc_info=True,
+            )
         await message.answer(
             f"✅ Administrator <code>{target_id}</code> added. "
-            "They can open the private panel with /admin.",
+            "Ask them to open the bot and send /start, then use /admin.",
             parse_mode="HTML",
         )
     else:
@@ -580,10 +598,12 @@ async def receive_setting(message: Message, state: FSMContext):
             await message.answer("Send whole seconds from 60 to 2592000 (30 days).")
             return
         value = int(raw)
+    elif key == "referral_reward_units" and re.fullmatch(r"0+(?:\\.0{1,4})?", raw):
+        value = 0
     else:
         value = storage.parse_amount_units(raw)
         if value is None:
-            await message.answer("Invalid amount. Use a positive amount with up to 4 decimal places.")
+            await message.answer("Invalid amount. Use up to 4 decimal places. Referral reward can also be set to 0 to disable it.")
             return
     storage.update_setting(key, value)
     await state.clear()
