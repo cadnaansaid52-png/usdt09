@@ -26,6 +26,16 @@ admin_router = Router()
 ADMIN_AUDIT_CHAT_ID = int(__import__("os").getenv("ADMIN_AUDIT_CHAT_ID", "-5399347693"))
 
 
+def _get_admin_audit_chat_id():
+    try:
+        configured = storage.get_setting("admin_audit_chat_id", str(ADMIN_AUDIT_CHAT_ID))
+        chat_id = int(configured)
+        return chat_id if chat_id != 0 else ADMIN_AUDIT_CHAT_ID
+    except (TypeError, ValueError, Exception):
+        logger.exception("Could not read the configured admin activity log chat ID")
+        return ADMIN_AUDIT_CHAT_ID
+
+
 async def _notify_admin_change(bot: Bot, actor, action: str, details: str, target_user_id=None):
     actor_id = int(getattr(actor, "id", 0) or 0)
     actor_name = " ".join(
@@ -52,9 +62,10 @@ async def _notify_admin_change(bot: Bot, actor, action: str, details: str, targe
         "━━━━━━━━━━━━━━━━━━\n"
         f"📋 <b>Details</b>\n{detail_text}"
     )
+    chat_id = _get_admin_audit_chat_id()
     try:
         await bot.send_message(
-            chat_id=ADMIN_AUDIT_CHAT_ID,
+            chat_id=chat_id,
             text=message_text,
             parse_mode="HTML",
             disable_web_page_preview=True,
@@ -63,7 +74,7 @@ async def _notify_admin_change(bot: Bot, actor, action: str, details: str, targe
         # Do not undo a successful admin change if the log group is unavailable.
         logger.exception(
             "Could not send admin activity notification to chat %s",
-            ADMIN_AUDIT_CHAT_ID,
+            chat_id,
         )
 
 
