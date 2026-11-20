@@ -142,6 +142,7 @@ def init_db():
                 "bonus_interval_seconds": str(DEFAULT_BONUS_INTERVAL),
                 "min_withdrawal_units": str(DEFAULT_MIN_WITHDRAWAL_UNITS),
                 "referral_reward_units": str(DEFAULT_REFERRAL_REWARD_UNITS),
+                "adsgram_block_id": os.getenv("ADSGRAM_BLOCK_ID", "").strip(),
                 "maintenance": "OFF",
                 "force_channels": os.getenv("FORCE_CHANNELS", "").strip(),
             }
@@ -308,7 +309,7 @@ def get_setting(key, default=None):
 
 
 def update_setting(key, value):
-    allowed = {"bonus_units", "bonus_interval_seconds", "min_withdrawal_units", "referral_reward_units", "maintenance", "force_channels", "admin_audit_chat_id"}
+    allowed = {"bonus_units", "bonus_interval_seconds", "min_withdrawal_units", "referral_reward_units", "maintenance", "force_channels", "admin_audit_chat_id", "adsgram_block_id"}
     if key not in allowed:
         raise ValueError("Unknown setting.")
     with db_session() as conn:
@@ -329,6 +330,7 @@ def get_settings():
         "bonus_interval_seconds": int(values.get("bonus_interval_seconds", DEFAULT_BONUS_INTERVAL)),
         "min_withdrawal_units": int(values.get("min_withdrawal_units", DEFAULT_MIN_WITHDRAWAL_UNITS)),
         "referral_reward_units": int(values.get("referral_reward_units", DEFAULT_REFERRAL_REWARD_UNITS)),
+        "adsgram_block_id": values.get("adsgram_block_id", os.getenv("ADSGRAM_BLOCK_ID", "").strip()),
         "maintenance": values.get("maintenance", "OFF"),
     }
 
