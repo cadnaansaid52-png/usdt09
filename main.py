@@ -98,18 +98,18 @@ class TelegramLogHandler(logging.Handler):
         if record.exc_info and record.exc_info[0]:
             exception_name = record.exc_info[0].__name__
             exception_text = str(record.exc_info[1] or "")[:700]
-            message += f"\\n{exception_name}: {exception_text}"
+            message += f"\n{exception_name}: {exception_text}"
 
         timestamp = logging.Formatter().formatTime(
             record, "%Y-%m-%d %H:%M:%S"
         )
         text = (
-            "⚠️ <b>USDT09 BOT LOG</b>\\n"
-            "━━━━━━━━━━━━━━━━━━\\n"
-            f"📊 <b>Level:</b> {html.escape(record.levelname)}\\n"
-            f"🧩 <b>Module:</b> <code>{html.escape(record.name)}</code>\\n"
-            f"🕒 <b>Time:</b> <code>{timestamp} UTC</code>\\n"
-            "━━━━━━━━━━━━━━━━━━\\n"
+            "⚠️ <b>USDT09 BOT LOG</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            f"📊 <b>Level:</b> {html.escape(record.levelname)}\n"
+            f"🧩 <b>Module:</b> <code>{html.escape(record.name)}</code>\n"
+            f"🕒 <b>Time:</b> <code>{timestamp} UTC</code>\n"
+            "━━━━━━━━━━━━━━━━━━\n"
             f"<pre>{html.escape(message)[:3000]}</pre>"
         )
         try:
