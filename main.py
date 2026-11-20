@@ -806,7 +806,7 @@ async def mini_app():
 async def mini_app_config():
     return {
         "app": "Math CAPTCHA",
-        "adsgramBlockId": ADSGRAM_BLOCK_ID,
+        "adsgramBlockId": storage.get_settings().get("adsgram_block_id") or ADSGRAM_BLOCK_ID,
         "questionsPerRound": 2,
         "adFormat": "rewarded",
     }
@@ -867,7 +867,7 @@ async def root():
         "status": "online" if active_bot is not None else "waiting_for_configuration",
         "telegram_bot_enabled": active_bot is not None,
         "mini_app": "/app",
-        "adsgram_configured": bool(ADSGRAM_BLOCK_ID),
+        "adsgram_configured": bool(storage.get_settings().get("adsgram_block_id") or ADSGRAM_BLOCK_ID),
     }
 
 
