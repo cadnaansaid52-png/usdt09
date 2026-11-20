@@ -391,7 +391,7 @@ async def set_admin_logs_group(message: Message):
 
     storage.update_setting("admin_audit_chat_id", str(message.chat.id))
     await message.answer(
-        "✅ <b>Logs group connected successfully.</b>\\n"
+        "✅ <b>Logs group connected successfully.</b>\n"
         "Admin actions and important bot warnings/errors will be sent here.",
         parse_mode="HTML",
     )
