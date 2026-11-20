@@ -608,6 +608,19 @@ def set_withdrawal_status(withdrawal_id, new_status, admin_id, note="", txid=Non
             return "ok"
 
 
+def get_broadcast_user_ids():
+    """Return every registered, non-banned user who can receive a broadcast."""
+    with db_session() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT telegram_id
+                FROM users
+                WHERE is_banned = FALSE
+                ORDER BY created_at ASC, telegram_id ASC
+            """)
+            return [int(row[0]) for row in cur.fetchall()]
+
+
 def get_user_list(limit=15):
     limit = max(1, min(int(limit), 50))
     with db_session() as conn:
