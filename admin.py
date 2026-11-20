@@ -458,13 +458,16 @@ async def _run_broadcast(callback: CallbackQuery, state: FSMContext, bot: Bot, a
     last_update = started_at
 
     if callback.message:
-        await callback.message.edit_text(
-            "📣 <b>Broadcast is running</b>\n"
-            f"Progress: <b>0/{total}</b>\n"
-            "✅ Sent: <b>0</b> · 🚫 Blocked: <b>0</b> · ⚠️ Failed: <b>0</b>",
-            reply_markup=_broadcast_stop_keyboard(),
-            parse_mode="HTML",
-        )
+        try:
+            await callback.message.edit_text(
+                "📣 <b>Broadcast is running</b>\n"
+                f"Progress: <b>0/{total}</b>\n"
+                "✅ Sent: <b>0</b> · 🚫 Blocked: <b>0</b> · ⚠️ Failed: <b>0</b>",
+                reply_markup=_broadcast_stop_keyboard(),
+                parse_mode="HTML",
+            )
+        except Exception:
+            logger.debug("Could not create initial broadcast progress message.", exc_info=True)
 
     try:
         for index, target_id in enumerate(recipients, start=1):
