@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#090d1c">
+  <meta name="description" content="A quick two-question math challenge inside Telegram.">
+  <title>Math CAPTCHA</title>
+  <link rel="stylesheet" href="/miniapp/style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js?65" defer></script>
+  <script src="https://sad.adsgram.ai/js/sad.min.js" defer></script>
+  <script src="/miniapp/app.js" defer></script>
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">∑</div>
+        <div>
+          <div class="brand-name">MATH CAPTCHA</div>
+          <div class="brand-subtitle">Think fast. Stay sharp.</div>
+        </div>
+      </div>
+      <div class="user-pill" id="user-pill">
+        <span class="user-dot"></span>
+        <span id="user-name">PLAYER</span>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div class="eyebrow"><span class="eyebrow-dot"></span> HUMAN CHECK CHALLENGE</div>
+      <h1>Prove it with<br><span>your mind.</span></h1>
+      <p class="hero-copy">Solve two quick math questions. A sponsored ad appears after every answer to keep the challenge running.</p>
+    </section>
+
+    <section class="challenge-card" id="challenge-card" aria-live="polite">
+      <div class="card-topline">
+        <div class="round-label">YOUR CHALLENGE</div>
+        <div class="round-count" id="round-count">QUESTION 1 / 2</div>
+      </div>
+      <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+
+      <div class="question-area" id="question-area">
+        <div class="question-hint">Which expression equals</div>
+        <div class="target-number" id="target-number">18<span>?</span></div>
+        <div class="question-instruction">Choose the correct answer below</div>
+        <div class="options" id="options">
+          <button class="option" type="button"><span class="option-letter">A</span><span class="option-value">8 + 8</span><span class="option-arrow">↗</span></button>
+          <button class="option" type="button"><span class="option-letter">B</span><span class="option-value">8 + 10</span><span class="option-arrow">↗</span></button>
+          <button class="option" type="button"><span class="option-letter">C</span><span class="option-value">5 + 8</span><span class="option-arrow">↗</span></button>
+        </div>
+        <div class="feedback" id="feedback" role="status"></div>
+      </div>
+
+      <div class="complete-area hidden" id="complete-area">
+        <div class="complete-icon">✓</div>
+        <div class="complete-title">Challenge completed</div>
+        <p>You solved both questions. Ready for another round?</p>
+        <button class="primary-button" id="next-round" type="button">Start another challenge <span>→</span></button>
+      </div>
+
+      <div class="ad-status hidden" id="ad-status">
+        <div class="ad-spinner"></div>
+        <div class="ad-status-title" id="ad-status-title">Loading sponsored ad</div>
+        <p id="ad-status-copy">Please watch the full ad to continue. You do not need to click it.</p>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div class="footer-note"><span class="shield">◆</span> Two questions per round · No cash rewards or withdrawals</div>
+      <div class="footer-brand">POWERED BY ADSGRAM <span>•</span> MATH CHALLENGE</div>
+    </footer>
+
+    <section class="notice hidden" id="notice" role="alert">
+      <div class="notice-title" id="notice-title">Open inside Telegram</div>
+      <p id="notice-copy">Launch this Mini App from the USDT09 bot to continue.</p>
+      <button class="notice-button hidden" id="retry-ad" type="button">Try ad again</button>
+    </section>
+  </main>
+</body>
+</html>
