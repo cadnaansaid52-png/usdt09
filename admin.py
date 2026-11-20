@@ -31,7 +31,7 @@ def _get_admin_audit_chat_id():
         configured = storage.get_setting("admin_audit_chat_id", str(ADMIN_AUDIT_CHAT_ID))
         chat_id = int(configured)
         return chat_id if chat_id != 0 else ADMIN_AUDIT_CHAT_ID
-    except (TypeError, ValueError, Exception):
+    except Exception:
         logger.exception("Could not read the configured admin activity log chat ID")
         return ADMIN_AUDIT_CHAT_ID
 
