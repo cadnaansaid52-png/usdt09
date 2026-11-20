@@ -1,77 +1,71 @@
-# USDT09 Telegram Bot
+# Math CAPTCHA Telegram Mini App
 
-USDT09 is a Telegram rewards and referral bot backed by PostgreSQL.
+This project is now a Telegram Mini App built around a short, ad-supported math challenge. The bot opens the Mini App from its **🧮 Open Math CAPTCHA** keyboard button.
 
-## User features
+## User experience
 
-- Required-channel join and subscription verification.
-- Available balance shown in the main menu.
-- Configurable hourly bonus.
-- Referral links, a configurable USDT reward for each newly verified referral (default 0.01 USDT), and a verified-referral leaderboard.
-- Two-step USDT BEP20 withdrawal requests (amount first, then wallet address).
-- Withdrawal history with Pending, Approved, Rejected and Paid states.
+- Each round contains exactly **two random math questions**.
+- Every question shows a target number and three multiple-choice expressions (A, B and C). One expression equals the target.
+- Every answer attempt triggers a real AdsGram **Rewarded** ad.
+- The selected answer is revealed only after AdsGram confirms that the rewarded ad was completed. If the ad is skipped, unavailable, or errors, the app does not count it as completed and offers a retry.
+- A correct answer advances to the next question. An incorrect answer lets the user retry the same question.
+- There are no cash rewards, USDT balances, or public withdrawal features in the new user flow.
 
-## Manual withdrawal workflow
+The sample question format is:
 
-1. A user submits the withdrawal amount, then sends a BEP20 wallet address.
-2. The requested amount is reserved from the user's available balance.
-3. The request appears in the private admin panel as **Pending**.
-4. An administrator reviews and approves or rejects it.
-5. After approval, an administrator sends USDT manually from the project's own wallet.
-6. Only after checking that transfer, the administrator enters its real blockchain TXID and marks the request **Paid**.
-7. If the request is rejected, the reserved amount is returned to the user's available balance.
+```text
+18
 
-The bot does not automatically send crypto or verify blockchain transfers. Admins must check the network, address, amount and TXID themselves. Never mark a withdrawal paid before the real transfer is confirmed.
+A) 8 + 8
+B) 8 + 10
+C) 5 + 8
+```
 
-## Admin panel
+The correct expression is B because it equals 18. Questions are generated randomly in the Mini App.
 
-Configure one or more Telegram IDs in ADMIN_IDS (comma-separated). Administrators open the private panel with /admin.
+## AdsGram setup
 
-Admin features:
+1. Create/approve a Mini App ad block in your AdsGram publisher account: https://partner.adsgram.ai
+2. Copy the numeric **blockId** for the Rewarded format.
+3. Set `ADSGRAM_BLOCK_ID` in the Render service environment.
+4. Restart/redeploy the service, then open the Mini App in Telegram and test a real ad.
 
-- Dashboard: users, daily signups, banned users, available balances and withdrawal totals by status.
-- User management: recent users, search by Telegram ID or username, user details, ban/unban.
-- Admin management: add and remove administrators by Telegram ID. The configured bot owner cannot be removed.
-- Admin activity notifications: send detailed alerts for successful admin changes to a private Telegram group. Default chat ID: -5399347693; optionally override with ADMIN_AUDIT_CHAT_ID.
-- Referral rewards: credit the inviter's balance once when a referred user first becomes verified; the reward rate is configurable in Settings.
-- Balance management: add or deduct USDT from a user's internal balance.
-- Withdrawal management: separate Pending, Approved, Rejected and Paid lists; approve, reject/refund, and mark paid with TXID.
-- Force Join channels: add or remove public channel usernames or private channel IDs and invite links from the admin panel.
-- Settings: bonus amount, bonus interval and minimum withdrawal.
-- Financial summary and transaction ledger records.
+The SDK is loaded from `https://sad.adsgram.ai/js/sad.min.js`. The app proceeds only after the AdsGram Rewarded SDK reports completion. The app does not ask users to click ads. AdsGram determines the actual ad duration; the integration cannot promise that every ad lasts exactly 15 seconds. Test/debug ads are not counted as production impressions.
 
-The public bot command /myid shows the caller's own Telegram ID so the owner can add it to ADMIN_IDS.
+## Telegram Mini App
 
-## PostgreSQL and Render
+- App route: `/app`
+- Static assets: `/miniapp/`
+- Public SDK configuration: `/api/miniapp/config`
+- Telegram session verification: `/api/miniapp/session`
 
-This project requires PostgreSQL. It no longer uses SQLite or the container filesystem for balances and withdrawals.
+The backend validates Telegram `initData` using the bot token and rejects invalid or expired sessions. The app uses Telegram's WebApp interface and opens from the bot's reply-keyboard Web App button.
 
-Environment variables:
+## Environment variables
 
-- BOT_TOKEN — required Telegram bot token.
-- DATABASE_URL — required PostgreSQL connection string. On Render, use a private connection string from the same region.
-- ADMIN_IDS — comma-separated initial administrator Telegram IDs.
-- BOT_OWNER_ID — the bot owner's Telegram ID. Set this explicitly so the owner is protected from administrator removal. If omitted, the bot uses legacy ADMIN_ID, then the first ID in ADMIN_IDS.
-- ADMIN_AUDIT_CHAT_ID — optional private group ID for admin activity alerts; defaults to -5399347693. Add the bot to that group and allow it to send messages.
-- FORCE_CHANNELS — optional initial Force Join channel entries. After startup, administrators can add or remove channels from the private admin panel. Public examples: @yourchannel or https://t.me/yourchannel. Private channel format: -1001234567890|https://t.me/+INVITE_CODE|Channel title.
-- WEBHOOK_URL — optional public service URL. When set, webhook mode is used.
-- WEBHOOK_SECRET — required when webhook mode is enabled.
-- LOG_LEVEL — optional; defaults to INFO.
+- `BOT_TOKEN` — required Telegram bot token.
+- `DATABASE_URL` — required PostgreSQL connection string (used by the bot's existing user/admin records).
+- `ADMIN_IDS` — comma-separated administrator Telegram IDs.
+- `BOT_OWNER_ID` — protected bot owner Telegram ID.
+- `WEBAPP_URL` — HTTPS Mini App URL; defaults to `https://usdt09.onrender.com/app`.
+- `ADSGRAM_BLOCK_ID` — numeric AdsGram Rewarded ad block ID; leave empty until AdsGram has issued one.
+- `ADMIN_AUDIT_CHAT_ID` — optional private admin-log group ID.
+- `FORCE_CHANNELS` — optional required-channel entries.
+- `WEBHOOK_URL`, `WEBHOOK_SECRET` — optional Telegram webhook configuration.
+- `LOG_LEVEL` — optional log level.
 
-Render build command:
+## Render
 
+Build command:
+
+```bash
 pip install -r requirements.txt
+```
 
-Render start command:
+Start command:
 
+```bash
 uvicorn main:app --host 0.0.0.0 --port $PORT
+```
 
-The bot must be an administrator in every required channel so it can verify membership.
-
-## Important database plan note
-
-The USDT09 PostgreSQL resource was created on Render's Free plan for initial setup. Render reports that this free database expires on **December 11, 2026**. Upgrade or migrate it before that date to avoid losing service availability or data. Do not rely on an expiring free database for long-term financial records.
-
-## Safety
-
-Balances are internal records, not funds held in a custodial wallet by the bot. The project owner is responsible for funding and manually processing real withdrawals, keeping accurate accounting records, securing admin IDs and verifying blockchain transactions.
+The existing PostgreSQL/admin records are retained for continuity. The public user menu no longer exposes the old bonus, balance, or withdrawal workflow.
