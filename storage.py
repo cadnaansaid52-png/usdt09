@@ -308,7 +308,7 @@ def get_setting(key, default=None):
 
 
 def update_setting(key, value):
-    allowed = {"bonus_units", "bonus_interval_seconds", "min_withdrawal_units", "referral_reward_units", "maintenance", "force_channels"}
+    allowed = {"bonus_units", "bonus_interval_seconds", "min_withdrawal_units", "referral_reward_units", "maintenance", "force_channels", "admin_audit_chat_id"}
     if key not in allowed:
         raise ValueError("Unknown setting.")
     with db_session() as conn:
