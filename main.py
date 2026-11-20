@@ -216,10 +216,10 @@ def force_join_keyboard():
 
 def welcome_text(user_id):
     return (
-        "✅ <b>You are ready!</b>\\n\\n"
-        "🧮 Welcome to <b>Math CAPTCHA</b>.\\n\\n"
+        "✅ <b>You are ready!</b>\n\n"
+        "🧮 Welcome to <b>Math CAPTCHA</b>.\n\n"
         "Solve two random math questions in each round. A sponsored AdsGram ad appears after every answer. "
-        "Watch it to the end to continue.\\n\\n"
+        "Watch it to the end to continue.\n\n"
         "There are no cash rewards or USDT withdrawals in this app."
     )
 
@@ -416,10 +416,10 @@ async def set_admin_logs_group(message: Message):
 async def handle_help(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "<b>Math CAPTCHA Help</b>\\n\\n"
-        "Open the Mini App from the button below.\\n"
-        "Each round contains two random math questions.\\n"
-        "A real sponsored AdsGram rewarded ad appears after every answer. Watch the full ad to continue.\\n\\n"
+        "<b>Math CAPTCHA Help</b>\n\n"
+        "Open the Mini App from the button below.\n"
+        "Each round contains two random math questions.\n"
+        "A real sponsored AdsGram rewarded ad appears after every answer. Watch the full ad to continue.\n\n"
         "This app does not pay cash or USDT.",
         reply_markup=main_keyboard(message.from_user.id) if message.from_user else None,
         parse_mode="HTML",
