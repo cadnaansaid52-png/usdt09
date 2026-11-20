@@ -311,14 +311,16 @@ async def show_settings(target):
         f"🎁 Bonus amount: <b>{_fmt(settings['bonus_units'])} USDT</b>\n"
         f"⏱ Bonus interval: <b>{settings['bonus_interval_seconds']} seconds</b>\n"
         f"⬇️ Minimum withdrawal: <b>{_fmt(settings['min_withdrawal_units'])} USDT</b>\n"
-        f"👥 Referral reward: <b>{_fmt(settings['referral_reward_units'])} USDT</b> per verified referral\n\n"
-        "Choose a value to update. Amounts support up to 4 decimal places."
+        f"👥 Referral reward: <b>{_fmt(settings['referral_reward_units'])} USDT</b> per verified referral\n"
+        f"📺 AdsGram block ID: <code>{html.escape(settings.get('adsgram_block_id') or 'Not configured')}</code>\n\n"
+        "Choose a value to update."
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [_btn("🎁 Change bonus amount", "adm:set:bonus_units")],
         [_btn("⏱ Change bonus interval", "adm:set:bonus_interval_seconds")],
         [_btn("⬇️ Change minimum withdrawal", "adm:set:min_withdrawal_units")],
         [_btn("👥 Change referral reward", "adm:set:referral_reward_units")],
+        [_btn("📺 Set AdsGram Block ID", "adm:set:adsgram_block_id")],
         [_btn("📢 Manage Force Join channels", "adm:channels")],
         [_btn("⬅️ Dashboard", "adm:dashboard")],
     ])
@@ -806,13 +808,15 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
     elif action == "settings":
         await state.clear()
         await show_settings(callback)
-    elif action == "set" and len(data) == 3 and data[2] in {"bonus_units", "bonus_interval_seconds", "min_withdrawal_units", "referral_reward_units"}:
+    elif action == "set" and len(data) == 3 and data[2] in {"bonus_units", "bonus_interval_seconds", "min_withdrawal_units", "referral_reward_units", "adsgram_block_id"}:
         await state.set_state(AdminStates.waiting_setting)
         await state.update_data(setting_key=data[2])
         if data[2] == "bonus_interval_seconds":
             prompt = "Interval in seconds (minimum 60)."
         elif data[2] == "referral_reward_units":
             prompt = "Referral reward per verified referral in USDT (example 0.01). Send 0 to disable rewards."
+        elif data[2] == "adsgram_block_id":
+            prompt = "Send the numeric AdsGram Rewarded block ID from your AdsGram publisher account. Send 0 to clear it."
         else:
             prompt = "USDT amount (example 0.05)."
         await callback.message.answer(prompt)
@@ -982,6 +986,14 @@ async def receive_setting(message: Message, state: FSMContext, bot: Bot):
             await message.answer("Send whole seconds from 60 to 2592000 (30 days).")
             return
         value = int(raw)
+    elif key == "adsgram_block_id":
+        if raw == "0":
+            value = ""
+        elif re.fullmatch(r"[0-9]{1,20}", raw):
+            value = raw
+        else:
+            await message.answer("Send the numeric AdsGram block ID, or 0 to clear it.")
+            return
     elif key == "referral_reward_units" and re.fullmatch(r"0+(?:\.0{1,4})?", raw):
         value = 0
     else:
@@ -995,6 +1007,10 @@ async def receive_setting(message: Message, state: FSMContext, bot: Bot):
         old_display = f"{old_value} seconds"
         new_display = f"{value} seconds"
         setting_label = "Bonus interval"
+    elif key == "adsgram_block_id":
+        old_display = old_value or "Not configured"
+        new_display = value or "Not configured"
+        setting_label = "AdsGram Rewarded block ID"
     else:
         old_display = f"{_fmt(old_value)} USDT"
         new_display = f"{_fmt(value)} USDT"
