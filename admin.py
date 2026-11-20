@@ -1,10 +1,12 @@
+import asyncio
 import html
 import logging
 import re
+import time
 from datetime import datetime, timezone
 
 from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -21,6 +23,11 @@ import storage
 
 logger = logging.getLogger("usdt09.admin")
 admin_router = Router()
+
+BROADCAST_RUNNING = set()
+BROADCAST_CANCEL_REQUESTS = set()
+
+
 
 # Private group used for detailed administrator activity notifications.
 ADMIN_AUDIT_CHAT_ID = int(__import__("os").getenv("ADMIN_AUDIT_CHAT_ID", "-5399347693"))
@@ -98,6 +105,9 @@ class AdminStates(StatesGroup):
     waiting_reject_note = State()
     waiting_channel = State()
     waiting_admin_id = State()
+    waiting_broadcast_message = State()
+    waiting_broadcast_confirm = State()
+    broadcast_sending = State()
 
 
 def _btn(text, data):
@@ -108,6 +118,7 @@ def admin_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [_btn("📊 Dashboard", "adm:dashboard"), _btn("👥 Users", "adm:users")],
         [_btn("🔎 Search user", "adm:search"), _btn("💸 Withdrawals", "adm:withdrawals")],
+        [_btn("📣 Broadcast", "adm:broadcast")],
         [_btn("📢 Force Join channels", "adm:channels")],
         [_btn("👮 Admins", "adm:admins")],
         [_btn("⚙️ Settings", "adm:settings"), _btn("📈 Ledger summary", "adm:ledger")],
@@ -367,6 +378,169 @@ async def show_force_channels(target):
     await _edit(target, "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
+def _broadcast_confirm_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn("✅ Send to all users", "adm:broadcast:confirm")],
+        [_btn("❌ Cancel", "adm:broadcast:cancel")],
+    ])
+
+
+def _broadcast_stop_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn("⏹ Stop broadcast", "adm:broadcast:stop")],
+    ])
+
+
+async def _copy_broadcast_message(bot: Bot, source_chat_id: int, source_message_id: int, target_id: int):
+    try:
+        await bot.copy_message(
+            chat_id=target_id,
+            from_chat_id=source_chat_id,
+            message_id=source_message_id,
+        )
+        return "sent"
+    except TelegramRetryAfter as exc:
+        await asyncio.sleep(float(exc.retry_after) + 1)
+        try:
+            await bot.copy_message(
+                chat_id=target_id,
+                from_chat_id=source_chat_id,
+                message_id=source_message_id,
+            )
+            return "sent"
+        except TelegramForbiddenError:
+            return "blocked"
+        except TelegramAPIError:
+            return "failed"
+    except TelegramForbiddenError:
+        return "blocked"
+    except TelegramAPIError:
+        return "failed"
+    except Exception:
+        logger.exception("Unexpected error while delivering a broadcast to user %s", target_id)
+        return "failed"
+
+
+async def _run_broadcast(callback: CallbackQuery, state: FSMContext, bot: Bot, admin_id: int):
+    data = await state.get_data()
+    source_chat_id = data.get("broadcast_source_chat_id")
+    source_message_id = data.get("broadcast_message_id")
+    if not source_chat_id or not source_message_id:
+        await state.clear()
+        if callback.message:
+            await callback.message.edit_text("⚠️ Broadcast preview expired. Open Broadcast again.")
+        return
+
+    try:
+        recipients = storage.get_broadcast_user_ids()
+    except Exception:
+        logger.exception("Could not load broadcast recipients.")
+        await state.clear()
+        if callback.message:
+            await callback.message.edit_text("❌ Could not load users from the database. No messages were sent.")
+        return
+
+    total = len(recipients)
+    if total == 0:
+        await state.clear()
+        if callback.message:
+            await callback.message.edit_text("There are no active users to receive this broadcast.")
+        return
+
+    BROADCAST_RUNNING.add(admin_id)
+    BROADCAST_CANCEL_REQUESTS.discard(admin_id)
+    await state.set_state(AdminStates.broadcast_sending)
+
+    sent = 0
+    blocked = 0
+    failed = 0
+    started_at = time.monotonic()
+    last_update = started_at
+
+    if callback.message:
+        await callback.message.edit_text(
+            "📣 <b>Broadcast is running</b>\n"
+            f"Progress: <b>0/{total}</b>\n"
+            "✅ Sent: <b>0</b> · 🚫 Blocked: <b>0</b> · ⚠️ Failed: <b>0</b>",
+            reply_markup=_broadcast_stop_keyboard(),
+            parse_mode="HTML",
+        )
+
+    try:
+        for index, target_id in enumerate(recipients, start=1):
+            if admin_id in BROADCAST_CANCEL_REQUESTS:
+                break
+
+            result = await _copy_broadcast_message(
+                bot,
+                int(source_chat_id),
+                int(source_message_id),
+                int(target_id),
+            )
+            if result == "sent":
+                sent += 1
+            elif result == "blocked":
+                blocked += 1
+            else:
+                failed += 1
+
+            now = time.monotonic()
+            if callback.message and (index % 100 == 0 or now - last_update >= 5 or index == total):
+                try:
+                    await callback.message.edit_text(
+                        "📣 <b>Broadcast is running</b>\n"
+                        f"Progress: <b>{index}/{total}</b>\n"
+                        f"✅ Sent: <b>{sent}</b> · 🚫 Blocked: <b>{blocked}</b> · ⚠️ Failed: <b>{failed}</b>",
+                        reply_markup=_broadcast_stop_keyboard(),
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    logger.debug("Could not update broadcast progress message.", exc_info=True)
+                last_update = now
+
+            # Stay comfortably below Telegram's general broadcast throughput limit.
+            await asyncio.sleep(0.05)
+
+    finally:
+        stopped = admin_id in BROADCAST_CANCEL_REQUESTS
+        BROADCAST_RUNNING.discard(admin_id)
+        BROADCAST_CANCEL_REQUESTS.discard(admin_id)
+        await state.clear()
+
+    elapsed = max(0.1, time.monotonic() - started_at)
+    processed = sent + blocked + failed
+    status = "⏹ <b>Broadcast stopped by admin</b>" if stopped else "✅ <b>Broadcast completed</b>"
+    result_text = (
+        f"📣 {status}\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"👥 Recipients: <b>{total}</b>\n"
+        f"📨 Processed: <b>{processed}</b>\n"
+        f"✅ Delivered: <b>{sent}</b>\n"
+        f"🚫 Blocked/unreachable: <b>{blocked}</b>\n"
+        f"⚠️ Failed: <b>{failed}</b>\n"
+        f"⏱ Duration: <b>{elapsed:.1f} seconds</b>"
+    )
+    if callback.message:
+        try:
+            await callback.message.edit_text(result_text, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(result_text, parse_mode="HTML")
+
+    await _notify_admin_change(
+        bot,
+        callback.from_user,
+        "Broadcast completed" if not stopped else "Broadcast stopped",
+        (
+            f"Recipients: {total}\n"
+            f"Processed: {processed}\n"
+            f"Delivered: {sent}\n"
+            f"Blocked/unreachable: {blocked}\n"
+            f"Failed: {failed}\n"
+            f"Duration: {elapsed:.1f} seconds"
+        ),
+    )
+
+
 def _normalize_force_channel_entry(value):
     raw = (value or "").strip()
     if not raw:
@@ -408,7 +582,60 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
     action = data[1] if len(data) > 1 else ""
     await callback.answer()
 
-    if action == "admins":
+    if action == "broadcast":
+        subaction = data[2] if len(data) > 2 else ""
+        admin_id = callback.from_user.id
+
+        if subaction == "confirm":
+            if admin_id in BROADCAST_RUNNING:
+                await callback.answer("A broadcast is already running.", show_alert=True)
+                return
+            if await state.get_state() != AdminStates.waiting_broadcast_confirm.state:
+                await callback.answer("Broadcast preview expired. Start again.", show_alert=True)
+                return
+            await _run_broadcast(callback, state, bot, admin_id)
+            return
+        elif subaction == "cancel":
+            if admin_id in BROADCAST_RUNNING:
+                await callback.answer("Use Stop broadcast to stop the active send.", show_alert=True)
+                return
+            await state.clear()
+            if callback.message:
+                await callback.message.edit_text("❌ Broadcast cancelled.")
+            return
+        elif subaction == "stop":
+            if admin_id in BROADCAST_RUNNING:
+                BROADCAST_CANCEL_REQUESTS.add(admin_id)
+                await callback.answer("Stopping after the current user…")
+            else:
+                await callback.answer("No broadcast is currently running.", show_alert=True)
+            return
+        elif not subaction:
+            if admin_id in BROADCAST_RUNNING:
+                await callback.answer("A broadcast is already running.", show_alert=True)
+                return
+            await state.clear()
+            try:
+                recipient_count = len(storage.get_broadcast_user_ids())
+            except Exception:
+                logger.exception("Could not count broadcast recipients.")
+                await callback.message.answer("❌ Could not load users from the database.")
+                return
+            await state.set_state(AdminStates.waiting_broadcast_message)
+            await callback.message.answer(
+                "📣 <b>CREATE BROADCAST</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                f"👥 Active recipients: <b>{recipient_count}</b>\n\n"
+                "Send one message for all active users. You can send text, photo, video, document, or another Telegram message type.\n"
+                "The bot will show you a preview and ask for confirmation before sending.\n\n"
+                "Send /cancel to exit.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [_btn("❌ Cancel", "adm:broadcast:cancel")],
+                ]),
+            )
+            return
+    elif action == "admins":
         await state.clear()
         await show_admins(callback)
     elif action == "admin" and len(data) == 3 and data[2] == "add":
@@ -854,3 +1081,51 @@ async def receive_reject_note(message: Message, state: FSMContext, bot):
         pass
     await message.answer("✅ Withdrawal rejected. User balance has been refunded.")
     await show_withdrawal(message, wid)
+
+
+
+@admin_router.message(AdminStates.waiting_broadcast_message)
+async def receive_broadcast_message(message: Message, state: FSMContext, bot: Bot):
+    if not message.from_user or not is_admin(message.from_user.id):
+        await state.clear()
+        return
+    if message.chat.type != "private":
+        await state.clear()
+        await message.answer("Open the bot privately to prepare a broadcast.")
+        return
+    if message.text and message.text.strip().lower() in {"/cancel", "/cancel@testjldcb_bot"}:
+        await state.clear()
+        await message.answer("❌ Broadcast cancelled.")
+        return
+
+    await state.update_data(
+        broadcast_source_chat_id=int(message.chat.id),
+        broadcast_message_id=int(message.message_id),
+    )
+    await state.set_state(AdminStates.waiting_broadcast_confirm)
+
+    try:
+        await message.answer("👀 <b>Broadcast preview</b>", parse_mode="HTML")
+        await bot.copy_message(
+            chat_id=message.chat.id,
+            from_chat_id=message.chat.id,
+            message_id=message.message_id,
+        )
+    except TelegramAPIError:
+        await state.clear()
+        await message.answer("❌ I couldn't create a preview from that message. Please open Broadcast and try again.")
+        return
+
+    try:
+        recipient_count = len(storage.get_broadcast_user_ids())
+    except Exception:
+        logger.exception("Could not count users for broadcast preview.")
+        recipient_count = 0
+
+    await message.answer(
+        "⚠️ <b>Confirm broadcast?</b>\n"
+        f"This message will be copied to <b>{recipient_count}</b> active users.\n"
+        "Nothing will be sent until you press the confirmation button.",
+        parse_mode="HTML",
+        reply_markup=_broadcast_confirm_keyboard(),
+    )
