@@ -27,8 +27,8 @@ The correct expression is B because it equals 18. Questions are generated random
 
 1. Create/approve a Mini App ad block in your AdsGram publisher account: https://partner.adsgram.ai
 2. Copy the numeric **blockId** for the Rewarded format.
-3. Set `ADSGRAM_BLOCK_ID` in the Render service environment.
-4. Restart/redeploy the service, then open the Mini App in Telegram and test a real ad.
+3. Open `/admin` in the bot, choose **Settings → Set AdsGram Block ID**, and paste the numeric block ID. You can also use the `ADSGRAM_BLOCK_ID` Render environment variable as a fallback.
+4. Reopen the Mini App in Telegram and test a real ad. Saving the ID in Admin Settings takes effect without a code redeploy.
 
 The SDK is loaded from `https://sad.adsgram.ai/js/sad.min.js`. The app proceeds only after the AdsGram Rewarded SDK reports completion. The app does not ask users to click ads. AdsGram determines the actual ad duration; the integration cannot promise that every ad lasts exactly 15 seconds. Test/debug ads are not counted as production impressions.
 
