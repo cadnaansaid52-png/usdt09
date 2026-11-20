@@ -26,6 +26,7 @@
   const state = {
     blockId: "",
     adController: null,
+    adRewarded: false,
     user: null,
     question: null,
     questionIndex: 0,
@@ -127,24 +128,16 @@
     }
     if (!state.adController) {
       state.adController = window.Adsgram.init({ blockId: state.blockId });
+      state.adController.addEventListener("onReward", () => { state.adRewarded = true; });
     }
 
-    let rewardEvent = false;
-    try {
-      state.adController.addEventListener("onReward", () => { rewardEvent = true; });
-    } catch (_) {
-      // The SDK promise below remains the source of completion.
-    }
-
+    state.adRewarded = false;
     const result = await state.adController.show();
-    if (result && result.done === false && !rewardEvent) {
-      throw new Error("The ad was not completed. Watch it to the end to continue.");
-    }
     if (result && result.error) {
       throw new Error("The ad could not be completed. Please try again.");
     }
-    if (!rewardEvent && !(result && result.done === true)) {
-      throw new Error("The ad completion could not be confirmed. Please try again.");
+    if (!state.adRewarded && !(result && result.done === true)) {
+      throw new Error("The ad was not completed. Watch it to the end to continue.");
     }
     return true;
   }
