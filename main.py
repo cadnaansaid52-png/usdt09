@@ -50,6 +50,78 @@ WEBHOOK_PATH = "/webhook"
 active_bot: Optional[Bot] = None
 polling_task: Optional[asyncio.Task] = None
 bot_username = ""
+telegram_log_handler = None
+
+
+def _configured_audit_chat_id():
+    try:
+        raw_chat_id = storage.get_setting(
+            "admin_audit_chat_id",
+            os.getenv("ADMIN_AUDIT_CHAT_ID", "-5399347693"),
+        )
+        return int(raw_chat_id)
+    except Exception:
+        return None
+
+
+class TelegramLogHandler(logging.Handler):
+    """Forward important application warnings/errors to the configured Telegram group."""
+
+    def __init__(self, bot: Bot):
+        super().__init__(level=logging.WARNING)
+        self.bot = bot
+
+    def emit(self, record: logging.LogRecord):
+        if not (record.name == "usdt09" or record.name.startswith("usdt09.")):
+            return
+        message = record.getMessage()
+        # Avoid recursively reporting failures of the log delivery itself.
+        if record.name == "usdt09.admin" and message.startswith((
+            "Could not send admin activity notification",
+            "Could not read the configured admin activity log chat ID",
+        )):
+            return
+        try:
+            asyncio.get_running_loop().create_task(self._send(record, message))
+        except RuntimeError:
+            return
+        except Exception:
+            return
+
+    async def _send(self, record: logging.LogRecord, message: str):
+        chat_id = _configured_audit_chat_id()
+        if not chat_id:
+            return
+
+        if BOT_TOKEN:
+            message = message.replace(BOT_TOKEN, "[hidden bot token]")
+        if record.exc_info and record.exc_info[0]:
+            exception_name = record.exc_info[0].__name__
+            exception_text = str(record.exc_info[1] or "")[:700]
+            message += f"\\n{exception_name}: {exception_text}"
+
+        timestamp = logging.Formatter().formatTime(
+            record, "%Y-%m-%d %H:%M:%S"
+        )
+        text = (
+            "⚠️ <b>USDT09 BOT LOG</b>\\n"
+            "━━━━━━━━━━━━━━━━━━\\n"
+            f"📊 <b>Level:</b> {html.escape(record.levelname)}\\n"
+            f"🧩 <b>Module:</b> <code>{html.escape(record.name)}</code>\\n"
+            f"🕒 <b>Time:</b> <code>{timestamp} UTC</code>\\n"
+            "━━━━━━━━━━━━━━━━━━\\n"
+            f"<pre>{html.escape(message)[:3000]}</pre>"
+        )
+        try:
+            await self.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            # Never log a log-delivery failure; that would create a notification loop.
+            return
 
 
 @dataclass(frozen=True)
@@ -304,6 +376,23 @@ async def show_group_chat_id(message: Message):
     await message.answer(
         "🆔 <b>This Telegram chat ID:</b>\n"
         f"<code>{message.chat.id}</code>",
+        parse_mode="HTML",
+    )
+
+
+@dp.message(F.text.regexp(r"^/setlogs(?:@[A-Za-z0-9_]+)?$"))
+async def set_admin_logs_group(message: Message):
+    if not message.from_user or not is_admin(message.from_user.id):
+        await message.answer("⛔ Only a bot administrator can configure the logs group.")
+        return
+    if message.chat.type not in {"group", "supergroup"}:
+        await message.answer("Send /setlogs in the private group where you want the bot logs.")
+        return
+
+    storage.update_setting("admin_audit_chat_id", str(message.chat.id))
+    await message.answer(
+        "✅ <b>Logs group connected successfully.</b>\\n"
+        "Admin actions and important bot warnings/errors will be sent here.",
         parse_mode="HTML",
     )
 
@@ -625,6 +714,11 @@ async def lifespan(_app: FastAPI):
     active_bot = Bot(token=BOT_TOKEN)
     me = await active_bot.get_me()
     bot_username = me.username or ""
+    global telegram_log_handler
+    if telegram_log_handler is not None:
+        logger.removeHandler(telegram_log_handler)
+    telegram_log_handler = TelegramLogHandler(active_bot)
+    logger.addHandler(telegram_log_handler)
     logger.info("Telegram bot identity confirmed: @%s (ID %s)", bot_username or "no_username", me.id)
 
     commands = [
@@ -671,6 +765,9 @@ async def lifespan(_app: FastAPI):
         except asyncio.CancelledError:
             pass
         polling_task = None
+    if telegram_log_handler is not None:
+        logger.removeHandler(telegram_log_handler)
+        telegram_log_handler = None
     if active_bot:
         await active_bot.session.close()
         active_bot = None
