@@ -580,7 +580,8 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
         return
     data = (callback.data or "").split(":")
     action = data[1] if len(data) > 1 else ""
-    await callback.answer()
+    if action != "broadcast":
+        await callback.answer()
 
     if action == "broadcast":
         subaction = data[2] if len(data) > 2 else ""
@@ -593,6 +594,7 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
             if await state.get_state() != AdminStates.waiting_broadcast_confirm.state:
                 await callback.answer("Broadcast preview expired. Start again.", show_alert=True)
                 return
+            await callback.answer("Broadcast started.")
             await _run_broadcast(callback, state, bot, admin_id)
             return
         elif subaction == "cancel":
@@ -600,6 +602,7 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
                 await callback.answer("Use Stop broadcast to stop the active send.", show_alert=True)
                 return
             await state.clear()
+            await callback.answer("Broadcast cancelled.")
             if callback.message:
                 await callback.message.edit_text("❌ Broadcast cancelled.")
             return
@@ -614,6 +617,7 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
             if admin_id in BROADCAST_RUNNING:
                 await callback.answer("A broadcast is already running.", show_alert=True)
                 return
+            await callback.answer()
             await state.clear()
             try:
                 recipient_count = len(storage.get_broadcast_user_ids())
@@ -1093,9 +1097,12 @@ async def receive_broadcast_message(message: Message, state: FSMContext, bot: Bo
         await state.clear()
         await message.answer("Open the bot privately to prepare a broadcast.")
         return
-    if message.text and message.text.strip().lower() in {"/cancel", "/cancel@testjldcb_bot"}:
+    if message.text and message.text.strip().lower().split("@", 1)[0] == "/cancel":
         await state.clear()
         await message.answer("❌ Broadcast cancelled.")
+        return
+    if message.text and message.text.lstrip().startswith("/"):
+        await message.answer("Send a normal message or media for the broadcast. Use /cancel to exit.")
         return
 
     await state.update_data(
