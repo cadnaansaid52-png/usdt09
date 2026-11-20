@@ -591,14 +591,20 @@ async def admin_callback(callback: CallbackQuery, state: FSMContext, bot):
         admin_id = callback.from_user.id
 
         if subaction == "confirm":
-            if admin_id in BROADCAST_RUNNING:
-                await callback.answer("A broadcast is already running.", show_alert=True)
-                return
             if await state.get_state() != AdminStates.waiting_broadcast_confirm.state:
                 await callback.answer("Broadcast preview expired. Start again.", show_alert=True)
                 return
+            if admin_id in BROADCAST_RUNNING:
+                await callback.answer("A broadcast is already running.", show_alert=True)
+                return
+            BROADCAST_RUNNING.add(admin_id)
+            BROADCAST_CANCEL_REQUESTS.discard(admin_id)
             await callback.answer("Broadcast started.")
-            await _run_broadcast(callback, state, bot, admin_id)
+            try:
+                await _run_broadcast(callback, state, bot, admin_id)
+            finally:
+                BROADCAST_RUNNING.discard(admin_id)
+                BROADCAST_CANCEL_REQUESTS.discard(admin_id)
             return
         elif subaction == "cancel":
             if admin_id in BROADCAST_RUNNING:
