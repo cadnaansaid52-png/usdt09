@@ -927,10 +927,16 @@ async def answer_math_challenge(request: Request):
     challenge_id = str(body.get("challengeId") or "")
     try:
         answer_index = int(body.get("answerIndex"))
+        question_number = int(body.get("questionNumber"))
     except (TypeError, ValueError):
         raise HTTPException(status_code=400, detail="Choose answer A, B, or C.")
 
-    result = storage.submit_math_answer(challenge_id, int(user_data["id"]), answer_index)
+    result = storage.submit_math_answer(
+        challenge_id,
+        int(user_data["id"]),
+        answer_index,
+        question_number,
+    )
     status = result.get("status")
     if status == "incorrect":
         return {
@@ -963,6 +969,8 @@ async def answer_math_challenge(request: Request):
         raise HTTPException(status_code=404, detail="Challenge not found. Start again from the Bonus button.")
     if status == "completed":
         raise HTTPException(status_code=409, detail="This challenge has already been completed.")
+    if status == "stale":
+        raise HTTPException(status_code=409, detail="This answer belongs to an earlier question. Use the current question.")
     if status == "not_verified":
         raise HTTPException(status_code=403, detail="Your account is not verified.")
     raise HTTPException(status_code=400, detail="Invalid challenge or answer.")
