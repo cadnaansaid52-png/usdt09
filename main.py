@@ -1,12 +1,11 @@
 import asyncio
-import hashlib
 import html
 import hmac
-import json
 import logging
 import os
 import re
-import time
+import secrets
+import json
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -196,12 +195,15 @@ def format_remaining(seconds):
 
 
 def main_keyboard(user_id):
+    balance = storage.get_balance_units(user_id)
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🧮 Open Math CAPTCHA", web_app=WebAppInfo(url=WEBAPP_URL))],
+            [KeyboardButton(text=f"💰 {storage.format_units(balance, 2)} USDT")],
+            [KeyboardButton(text="🎁 Bonus"), KeyboardButton(text="💸 Withdraw")],
+            [KeyboardButton(text="👥 Referrals"), KeyboardButton(text="🏆 Leaderboard")],
         ],
         resize_keyboard=True,
-        input_field_placeholder="Open Math CAPTCHA",
+        input_field_placeholder="Choose an option",
     )
 
 
@@ -215,14 +217,15 @@ def force_join_keyboard():
 
 
 def welcome_text(user_id):
+    settings = storage.get_settings()
+    balance = storage.get_balance_units(user_id)
     return (
-        "✅ <b>You are ready!</b>\n\n"
-        "🧮 Welcome to <b>Math CAPTCHA</b>.\n\n"
-        "Solve two random math questions in each round. A sponsored AdsGram ad appears after every answer. "
-        "Watch it to the end to continue.\n\n"
-        "There are no cash rewards or USDT withdrawals in this app."
+        "✅ <b>Channel verified!</b>\n\n"
+        "👋 Welcome to <b>USDT09</b> 💎\n\n"
+        f"💰 Available balance: <b>{storage.format_units(balance)} USDT</b>\n"
+        f"🎁 Bonus: <b>{storage.format_units(settings['bonus_units'])} USDT</b>\n\n"
+        "Choose an option below."
     )
-
 
 
 async def get_membership_status(bot, user_id):
@@ -336,16 +339,6 @@ async def handle_start(message: Message, command: CommandObject, bot: Bot, state
         await message.answer("⚠️ I couldn't verify your channel membership. Please try again later.")
 
 
-@dp.message(F.text.regexp(r"^(?:💰.*|🎁 Bonus|💸 Withdraw|👥 Referrals|🏆 Leaderboard|/withdraw(?:@[A-Za-z0-9_]+)?)$"))
-async def disable_legacy_reward_features(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer(
-        "ℹ️ USDT rewards and withdrawal features are no longer available. "
-        "Open the 🧮 Math CAPTCHA Mini App to complete the two-question challenge.",
-        reply_markup=main_keyboard(message.from_user.id) if message.from_user else None,
-    )
-
-
 @dp.callback_query(F.data == "verify_subscription")
 async def handle_verify(callback: CallbackQuery, bot: Bot):
     user = callback.from_user
@@ -416,12 +409,12 @@ async def set_admin_logs_group(message: Message):
 async def handle_help(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "<b>Math CAPTCHA Help</b>\n\n"
-        "Open the Mini App from the button below.\n"
-        "Each round contains two random math questions.\n"
-        "A real sponsored AdsGram rewarded ad appears after every answer. Watch the full ad to continue.\n\n"
-        "This app does not pay cash or USDT.",
-        reply_markup=main_keyboard(message.from_user.id) if message.from_user else None,
+        "<b>USDT09 Help</b>\n\n"
+        "🎁 Claim your available bonus.\n"
+        "💸 Submit a withdrawal request with your network and wallet.\n"
+        "Track updates through withdrawal notifications from the bot.\n"
+        "👥 Invite friends using your referral link.\n\n"
+        "For support, contact the bot administrator.",
         parse_mode="HTML",
     )
 
@@ -461,25 +454,34 @@ async def handle_bonus(message: Message, bot: Bot, state: FSMContext):
     await state.clear()
     if not await ensure_access(message, bot):
         return
-    status, balance, remaining = storage.claim_hourly_bonus(message.from_user.id)
-    if status == "claimed":
-        settings = storage.get_settings()
-        amount = settings["bonus_units"]
-        await message.answer(
-            "🎉 <b>Bonus claimed successfully!</b>\n\n"
-            f"💰 <b>+{storage.format_units(amount)} USDT</b> added to your balance.\n"
-            f"💳 New balance: <b>{storage.format_units(balance)} USDT</b>.",
-            reply_markup=main_keyboard(message.from_user.id),
-            parse_mode="HTML",
-        )
-    elif status == "cooldown":
+
+    status, balance, remaining = storage.get_bonus_status(message.from_user.id)
+    if status == "cooldown":
         await message.answer(
             f"⏳ Your next bonus will be available in <b>{format_remaining(remaining)}</b>.",
             reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML",
         )
-    else:
+        return
+    if status != "ready":
         await message.answer("Please complete channel verification before claiming a bonus.")
+        return
+
+    settings = storage.get_settings()
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🧮 Start Math CAPTCHA",
+            web_app=WebAppInfo(url=WEBAPP_URL),
+        )],
+    ])
+    await message.answer(
+        "🎁 <b>Hourly Bonus</b>\\n\\n"
+        "Solve two quick math questions to verify your bonus claim.\\n"
+        f"💰 Bonus amount: <b>{storage.format_units(settings['bonus_units'])} USDT</b>\\n\\n"
+        "Tap below to open the Math CAPTCHA Mini App.",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
 
 
 def withdrawal_cancel_keyboard():
@@ -789,85 +791,192 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="Math CAPTCHA Mini App",
-    description="Telegram Math CAPTCHA Mini App with AdsGram rewarded advertising.",
-    version="4.0.0",
+    title="USDT09 Telegram Bot",
+    description="USDT09 bot with a verified two-question Math CAPTCHA bonus Mini App.",
+    version="3.1.0",
     lifespan=lifespan,
 )
 app.mount("/miniapp", StaticFiles(directory=str(MINI_APP_DIR)), name="miniapp")
 
 
+def _verify_telegram_init_data(init_data: str):
+    if not BOT_TOKEN:
+        raise HTTPException(status_code=503, detail="Telegram bot is not configured.")
+    try:
+        pairs = parse_qsl(init_data, keep_blank_values=True, strict_parsing=True)
+        params = dict(pairs)
+        if len(params) != len(pairs):
+            raise ValueError("Duplicate Telegram init data fields.")
+        received_hash = params.pop("hash", "")
+        if not re.fullmatch(r"[0-9a-f]{64}", received_hash):
+            raise ValueError("Missing Telegram signature.")
+        check_string = "\\n".join(f"{key}={params[key]}" for key in sorted(params))
+        secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode("utf-8"), "sha256").digest()
+        calculated_hash = hmac.new(secret_key, check_string.encode("utf-8"), "sha256").hexdigest()
+        if not hmac.compare_digest(calculated_hash, received_hash):
+            raise ValueError("Telegram signature mismatch.")
+        auth_date = int(params.get("auth_date", "0"))
+        now = int(__import__("time").time())
+        if auth_date <= 0 or auth_date > now + 60 or now - auth_date > 86400:
+            raise ValueError("Telegram session expired.")
+        user = json.loads(params.get("user", "{}"))
+        user_id = int(user.get("id", 0))
+        if user_id <= 0:
+            raise ValueError("Telegram user missing.")
+        return user
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.info("Rejected invalid Telegram Mini App session: %s", exc)
+        raise HTTPException(status_code=401, detail="Telegram session is invalid. Reopen the Mini App.")
+
+
+async def _verified_miniapp_user(request: Request):
+    body = await request.json()
+    user_data = _verify_telegram_init_data(str(body.get("initData") or ""))
+    user_id = int(user_data["id"])
+    user = storage.get_user(user_id)
+    if not user or not user.get("verified"):
+        raise HTTPException(status_code=403, detail="Start the bot and complete channel verification first.")
+    if user.get("is_banned"):
+        raise HTTPException(status_code=403, detail="Your account is restricted.")
+    if active_bot is not None:
+        membership, _ = await get_membership_status(active_bot, user_id)
+        if membership != "joined":
+            raise HTTPException(status_code=403, detail="Join the required channel and verify your account first.")
+    return user_data
+
+
+def _new_math_question():
+    a = 2 + secrets.randbelow(17)
+    b = 2 + secrets.randbelow(17)
+    target = a + b
+    correct_expression = f"{a} + {b}"
+    choices = [correct_expression]
+    sums = {target}
+    while len(choices) < 3:
+        left = 2 + secrets.randbelow(17)
+        right = 2 + secrets.randbelow(17)
+        result = left + right
+        if result in sums:
+            continue
+        sums.add(result)
+        choices.append(f"{left} + {right}")
+    secrets.SystemRandom().shuffle(choices)
+    return {
+        "target": target,
+        "options": choices,
+        "correct_index": choices.index(correct_expression),
+    }
+
+
+def _question_for_client(question, number):
+    return {
+        "number": int(number),
+        "total": 2,
+        "target": int(question["target"]),
+        "options": list(question["options"]),
+    }
+
+
 @app.get("/app")
-async def mini_app():
+async def math_captcha_app():
     return FileResponse(MINI_APP_DIR / "index.html")
 
 
 @app.get("/api/miniapp/config")
 async def mini_app_config():
+    settings = storage.get_settings()
     return {
         "app": "Math CAPTCHA",
-        "adsgramBlockId": storage.get_settings().get("adsgram_block_id") or ADSGRAM_BLOCK_ID,
+        "adsgramBlockId": settings.get("adsgram_block_id") or ADSGRAM_BLOCK_ID,
         "questionsPerRound": 2,
-        "adFormat": "rewarded",
+        "adFormat": "Rewarded",
+        "adIsOptional": True,
     }
 
 
-@app.post("/api/miniapp/session")
-async def validate_mini_app_session(request: Request):
-    if not BOT_TOKEN:
-        raise HTTPException(status_code=503, detail="Telegram bot is not configured.")
-
-    try:
-        body = await request.json()
-        init_data = str(body.get("initData") or "")
-        pairs = parse_qsl(init_data, keep_blank_values=True, strict_parsing=True)
-        params = dict(pairs)
-        if len(params) != len(pairs):
-            raise ValueError("Duplicate Telegram init data fields.")
-
-        received_hash = params.pop("hash", "")
-        if not re.fullmatch(r"[0-9a-f]{64}", received_hash):
-            raise ValueError("Missing or invalid Telegram signature.")
-
-        check_string = "\n".join(f"{key}={params[key]}" for key in sorted(params))
-        secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode("utf-8"), hashlib.sha256).digest()
-        calculated_hash = hmac.new(secret_key, check_string.encode("utf-8"), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(calculated_hash, received_hash):
-            raise ValueError("Telegram signature verification failed.")
-
-        auth_date = int(params.get("auth_date", "0"))
-        now = int(time.time())
-        if auth_date <= 0 or auth_date > now + 60 or now - auth_date > 86400:
-            raise ValueError("Telegram session has expired. Reopen the Mini App.")
-
-        user = json.loads(params.get("user", "{}"))
-        user_id = int(user.get("id", 0))
-        if user_id <= 0:
-            raise ValueError("Telegram user information is missing.")
-
+@app.post("/api/miniapp/start")
+async def start_math_challenge(request: Request):
+    user_data = await _verified_miniapp_user(request)
+    user_id = int(user_data["id"])
+    status, balance, remaining = storage.get_bonus_status(user_id)
+    if status == "cooldown":
         return {
             "ok": True,
-            "user": {
-                "id": user_id,
-                "first_name": str(user.get("first_name") or "")[:64],
-                "username": str(user.get("username") or "")[:64],
-            },
+            "status": "cooldown",
+            "remainingSeconds": int(remaining),
         }
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.info("Rejected invalid Telegram Mini App session: %s", exc)
-        raise HTTPException(status_code=401, detail="Telegram session is invalid. Close and reopen the Mini App.")
+    if status != "ready":
+        raise HTTPException(status_code=403, detail="Complete channel verification before claiming a bonus.")
+
+    questions = [_new_math_question(), _new_math_question()]
+    challenge_id = storage.create_math_challenge(user_id, questions)
+    return {
+        "ok": True,
+        "status": "question",
+        "challengeId": challenge_id,
+        "question": _question_for_client(questions[0], 1),
+    }
+
+
+@app.post("/api/miniapp/answer")
+async def answer_math_challenge(request: Request):
+    user_data = await _verified_miniapp_user(request)
+    body = await request.json()
+    challenge_id = str(body.get("challengeId") or "")
+    try:
+        answer_index = int(body.get("answerIndex"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Choose answer A, B, or C.")
+
+    result = storage.submit_math_answer(challenge_id, int(user_data["id"]), answer_index)
+    status = result.get("status")
+    if status == "incorrect":
+        return {
+            "ok": True,
+            "status": "incorrect",
+            "question": result["question"],
+        }
+    if status == "next":
+        return {
+            "ok": True,
+            "status": "next",
+            "question": result["question"],
+        }
+    if status == "claimed":
+        return {
+            "ok": True,
+            "status": "verified",
+            "bonusAmount": storage.format_units(result["amount_units"]),
+            "balance": storage.format_units(result["balance_units"]),
+        }
+    if status == "cooldown":
+        return {
+            "ok": True,
+            "status": "cooldown",
+            "remainingSeconds": int(result["remaining"]),
+        }
+    if status == "expired":
+        raise HTTPException(status_code=410, detail="This challenge expired. Close the Mini App and try again.")
+    if status == "not_found":
+        raise HTTPException(status_code=404, detail="Challenge not found. Start again from the Bonus button.")
+    if status == "completed":
+        raise HTTPException(status_code=409, detail="This challenge has already been completed.")
+    if status == "not_verified":
+        raise HTTPException(status_code=403, detail="Your account is not verified.")
+    raise HTTPException(status_code=400, detail="Invalid challenge or answer.")
 
 
 @app.get("/")
 async def root():
     return {
-        "service": "Math CAPTCHA Mini App",
+        "service": "USDT09 Telegram Bot",
         "status": "online" if active_bot is not None else "waiting_for_configuration",
         "telegram_bot_enabled": active_bot is not None,
+        "database": "postgresql",
         "mini_app": "/app",
-        "adsgram_configured": bool(storage.get_settings().get("adsgram_block_id") or ADSGRAM_BLOCK_ID),
+        "withdrawals": "manual",
     }
 
 
