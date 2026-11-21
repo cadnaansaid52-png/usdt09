@@ -476,9 +476,9 @@ async def handle_bonus(message: Message, bot: Bot, state: FSMContext):
         )],
     ])
     await message.answer(
-        "🎁 <b>Hourly Bonus</b>\\n\\n"
-        "Solve two quick math questions to verify your bonus claim.\\n"
-        f"💰 Bonus amount: <b>{storage.format_units(settings['bonus_units'])} USDT</b>\\n\\n"
+        "🎁 <b>Hourly Bonus</b>\n\n"
+        "Solve two quick math questions to verify your bonus claim.\n"
+        f"💰 Bonus amount: <b>{storage.format_units(settings['bonus_units'])} USDT</b>\n\n"
         "Tap below to open the Math CAPTCHA Mini App.",
         reply_markup=keyboard,
         parse_mode="HTML",
@@ -811,7 +811,7 @@ def _verify_telegram_init_data(init_data: str):
         received_hash = params.pop("hash", "")
         if not re.fullmatch(r"[0-9a-f]{64}", received_hash):
             raise ValueError("Missing Telegram signature.")
-        check_string = "\\n".join(f"{key}={params[key]}" for key in sorted(params))
+        check_string = "\n".join(f"{key}={params[key]}" for key in sorted(params))
         secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode("utf-8"), "sha256").digest()
         calculated_hash = hmac.new(secret_key, check_string.encode("utf-8"), "sha256").hexdigest()
         if not hmac.compare_digest(calculated_hash, received_hash):
