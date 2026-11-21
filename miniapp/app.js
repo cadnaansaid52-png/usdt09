@@ -22,7 +22,6 @@
     noticeTitle: $("notice-title"),
     noticeCopy: $("notice-copy"),
     retryButton: $("retry-button"),
-    okButton: $("ok-button"),
     finishButton: $("finish-button")
   };
 
@@ -129,7 +128,6 @@
         ? "A bonus confirmation message has been sent to your Telegram chat. Tap OK in that message only if you want to open the optional ad."
         : "Your bonus is already credited. The Telegram confirmation could not be sent right now; you can safely close this Mini App.";
     }
-    el.okButton.classList.add("hidden");
     hideNotice();
   }
 
