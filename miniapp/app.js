@@ -138,6 +138,7 @@
       const result = await postJson("/api/miniapp/answer", {
         initData: state.initData,
         challengeId: state.challengeId,
+        questionNumber: state.question.number,
         answerIndex: answerIndex
       });
 
