@@ -885,6 +885,19 @@ async def math_captcha_app():
     return FileResponse(MINI_APP_DIR / "index.html")
 
 
+@app.post("/api/miniapp/session")
+async def mini_app_session(request: Request):
+    user_data, _ = await _verified_miniapp_user(request)
+    return {
+        "ok": True,
+        "user": {
+            "id": int(user_data["id"]),
+            "first_name": str(user_data.get("first_name") or "")[:64],
+            "username": str(user_data.get("username") or "")[:64],
+        },
+    }
+
+
 @app.get("/api/miniapp/config")
 async def mini_app_config():
     settings = storage.get_settings()
@@ -951,11 +964,48 @@ async def answer_math_challenge(request: Request):
             "question": result["question"],
         }
     if status == "claimed":
+        bonus_amount = storage.format_units(result["amount_units"])
+        new_balance = storage.format_units(result["balance_units"])
+        bot_message_sent = False
+
+        if active_bot is not None:
+            ad_url = f"{WEBAPP_URL}{'&' if '?' in WEBAPP_URL else '?'}open_ad=1"
+            confirmation_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="✅ OK",
+                        web_app=WebAppInfo(url=ad_url),
+                    )
+                ]
+            ])
+            try:
+                await active_bot.send_message(
+                    chat_id=int(user_data["id"]),
+                    text=(
+                        "✅ <b>Bonus Verified Successfully!</b>\\n\\n"
+                        "Math CAPTCHA-kii si sax ah ayaad u dhamaysay.\\n"
+                        f"💰 Bonus lagu daray: <b>+{bonus_amount} USDT</b>\\n"
+                        f"💳 Balance-kaaga cusub: <b>{new_balance} USDT</b>\\n\\n"
+                        "Taabo OK haddii aad rabto inaad furto xayeysiis ikhtiyaari ah. "
+                        "Bonus-kaaga hore ayaa loogu daray balance-kaaga."
+                    ),
+                    reply_markup=confirmation_keyboard,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+                bot_message_sent = True
+            except Exception:
+                logger.exception(
+                    "Could not send the verified bonus message to Telegram user %s",
+                    user_data["id"],
+                )
+
         return {
             "ok": True,
             "status": "verified",
-            "bonusAmount": storage.format_units(result["amount_units"]),
-            "balance": storage.format_units(result["balance_units"]),
+            "bonusAmount": bonus_amount,
+            "balance": new_balance,
+            "botMessageSent": bot_message_sent,
         }
     if status == "cooldown":
         return {
