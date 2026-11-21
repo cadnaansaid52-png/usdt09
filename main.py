@@ -844,7 +844,7 @@ async def _verified_miniapp_user(request: Request):
         membership, _ = await get_membership_status(active_bot, user_id)
         if membership != "joined":
             raise HTTPException(status_code=403, detail="Join the required channel and verify your account first.")
-    return user_data
+    return user_data, body
 
 
 def _new_math_question():
@@ -898,7 +898,7 @@ async def mini_app_config():
 
 @app.post("/api/miniapp/start")
 async def start_math_challenge(request: Request):
-    user_data = await _verified_miniapp_user(request)
+    user_data, body = await _verified_miniapp_user(request)
     user_id = int(user_data["id"])
     status, balance, remaining = storage.get_bonus_status(user_id)
     if status == "cooldown":
@@ -922,8 +922,7 @@ async def start_math_challenge(request: Request):
 
 @app.post("/api/miniapp/answer")
 async def answer_math_challenge(request: Request):
-    user_data = await _verified_miniapp_user(request)
-    body = await request.json()
+    user_data, body = await _verified_miniapp_user(request)
     challenge_id = str(body.get("challengeId") or "")
     try:
         answer_index = int(body.get("answerIndex"))
