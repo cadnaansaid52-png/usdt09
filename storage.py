@@ -481,11 +481,12 @@ def create_math_challenge(telegram_id, questions, now=None):
     return challenge_id
 
 
-def submit_math_answer(challenge_id, telegram_id, answer_index, now=None):
+def submit_math_answer(challenge_id, telegram_id, answer_index, question_number, now=None):
     now = int(now or time.time())
     try:
         challenge_id = str(uuid.UUID(str(challenge_id)))
         answer_index = int(answer_index)
+        question_number = int(question_number)
     except (TypeError, ValueError, OverflowError):
         return {"status": "invalid"}
 
@@ -512,6 +513,8 @@ def submit_math_answer(challenge_id, telegram_id, answer_index, now=None):
             current = int(challenge["current_question"])
             if current < 0 or current >= len(questions):
                 return {"status": "invalid"}
+            if question_number != current + 1:
+                return {"status": "stale"}
             question = questions[current]
             if answer_index < 0 or answer_index >= len(question["options"]):
                 return {"status": "invalid"}
