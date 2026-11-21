@@ -52,7 +52,7 @@ FORCE_CHANNELS_RAW = os.getenv("FORCE_CHANNELS", "").strip()
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").strip().rstrip("/")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "").strip()
 WEBHOOK_PATH = "/webhook"
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://usdt09.onrender.com/app").strip()
+WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip() or "https://usdt09.onrender.com/app"
 ADSGRAM_BLOCK_ID = os.getenv("ADSGRAM_BLOCK_ID", "").strip()
 MINI_APP_DIR = Path(__file__).resolve().parent / "miniapp"
 
