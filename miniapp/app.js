@@ -14,6 +14,7 @@
     completeArea: $("complete-area"),
     bonusAmount: $("bonus-amount"),
     bonusBalance: $("bonus-balance"),
+    okButton: $("ok-button"),
     adStatus: $("ad-status"),
     adStatusTitle: $("ad-status-title"),
     adStatusCopy: $("ad-status-copy"),
@@ -124,10 +125,10 @@
     el.bonusBalance.textContent = "New balance: " + data.balance + " USDT";
     const optionalAdCopy = document.querySelector(".optional-ad-copy");
     if (optionalAdCopy) {
-      optionalAdCopy.textContent = data.botMessageSent
-        ? "A bonus confirmation message has been sent to your Telegram chat. Tap OK in that message only if you want to open the optional ad."
-        : "Your bonus is already credited. The Telegram confirmation could not be sent right now; you can safely close this Mini App.";
+      optionalAdCopy.textContent = "Your bonus is already in your balance. Tap OK only if you want to open an optional sponsored ad. You can also close this page; your bonus will stay.";
     }
+    el.okButton.classList.remove("hidden");
+    el.okButton.disabled = false;
     hideNotice();
   }
 
@@ -243,6 +244,7 @@
     }
   }
 
+  el.okButton.addEventListener("click", openOptionalAd);
   el.finishButton.addEventListener("click", () => {
     if (tg && typeof tg.close === "function") tg.close();
   });
