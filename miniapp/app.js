@@ -4,7 +4,7 @@
   const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
   const $ = (id) => document.getElementById(id);
 
-  const elements = {
+  const el = {
     userName: $("user-name"),
     roundCount: $("round-count"),
     progressFill: $("progress-fill"),
@@ -12,6 +12,8 @@
     options: $("options"),
     questionArea: $("question-area"),
     completeArea: $("complete-area"),
+    bonusAmount: $("bonus-amount"),
+    bonusBalance: $("bonus-balance"),
     adStatus: $("ad-status"),
     adStatusTitle: $("ad-status-title"),
     adStatusCopy: $("ad-status-copy"),
@@ -19,253 +21,222 @@
     notice: $("notice"),
     noticeTitle: $("notice-title"),
     noticeCopy: $("notice-copy"),
-    retryAd: $("retry-ad"),
-    nextRound: $("next-round")
+    retryButton: $("retry-button"),
+    okButton: $("ok-button"),
+    finishButton: $("finish-button")
   };
 
   const state = {
+    initData: "",
+    challengeId: "",
     blockId: "",
-    adController: null,
-    adRewarded: false,
-    user: null,
     question: null,
-    questionIndex: 0,
-    challengeCompleted: false,
-    pendingAnswer: null,
-    adBusy: false
+    adOpened: false,
+    verified: false
   };
 
-  function showNotice(title, copy, retry = false) {
-    elements.noticeTitle.textContent = title;
-    elements.noticeCopy.textContent = copy;
-    elements.retryAd.classList.toggle("hidden", !retry);
-    elements.notice.classList.remove("hidden");
+  function showNotice(title, copy, retry) {
+    el.noticeTitle.textContent = title;
+    el.noticeCopy.textContent = copy;
+    el.retryButton.classList.toggle("hidden", !retry);
+    el.notice.classList.remove("hidden");
   }
 
   function hideNotice() {
-    elements.notice.classList.add("hidden");
+    el.notice.classList.add("hidden");
   }
 
-  function randomInt(min, max) {
-    const range = max - min + 1;
-    const values = new Uint32Array(1);
-    crypto.getRandomValues(values);
-    return min + (values[0] % range);
+  function formatRemaining(seconds) {
+    seconds = Math.max(0, Number(seconds) || 0);
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    if (hours) return hours + "h " + minutes + "m";
+    if (minutes) return minutes + "m " + secs + "s";
+    return secs + "s";
   }
 
-  function makeQuestion() {
-    const target = randomInt(12, 36);
-    const first = randomInt(Math.max(1, target - 18), Math.min(18, target - 1));
-    const correct = { a: first, b: target - first, value: target, correct: true };
-    const wrongPairs = [];
-    const sums = new Set([target]);
-
-    while (wrongPairs.length < 2) {
-      const a = randomInt(2, 18);
-      const b = randomInt(2, 18);
-      const sum = a + b;
-      if (sums.has(sum)) continue;
-      sums.add(sum);
-      wrongPairs.push({ a, b, value: sum, correct: false });
+  async function postJson(path, payload) {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.detail || "Something went wrong. Please try again.");
     }
-
-    const choices = [correct, ...wrongPairs];
-    for (let i = choices.length - 1; i > 0; i--) {
-      const j = randomInt(0, i);
-      [choices[i], choices[j]] = [choices[j], choices[i]];
-    }
-    return { target, choices, correctIndex: choices.findIndex(choice => choice.correct) };
+    return data;
   }
 
-  function setQuestion() {
-    state.question = makeQuestion();
-    state.challengeCompleted = false;
-    elements.questionArea.classList.remove("hidden");
-    elements.completeArea.classList.add("hidden");
-    elements.adStatus.classList.add("hidden");
-    elements.target.innerHTML = String(state.question.target) + "<span>?</span>";
-    elements.roundCount.textContent = `QUESTION ${state.questionIndex + 1} / 2`;
-    elements.progressFill.style.width = state.questionIndex === 0 ? "50%" : "100%";
-    elements.feedback.textContent = "Choose one answer. A full sponsored ad is required after every attempt.";
-    elements.feedback.className = "feedback";
-    elements.options.innerHTML = "";
+  function displayQuestion(question) {
+    state.question = question;
+    el.questionArea.classList.remove("hidden");
+    el.completeArea.classList.add("hidden");
+    el.adStatus.classList.add("hidden");
+    el.roundCount.textContent = "QUESTION " + question.number + " / " + question.total;
+    el.progressFill.style.width = question.number === 1 ? "50%" : "100%";
+    el.target.textContent = String(question.target);
+    const questionMark = document.createElement("span");
+    questionMark.textContent = "?";
+    el.target.appendChild(questionMark);
+    el.feedback.textContent = "Choose the correct expression.";
+    el.feedback.className = "feedback";
+    el.options.innerHTML = "";
 
-    state.question.choices.forEach((choice, index) => {
+    question.options.forEach((expression, index) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "option";
-      button.innerHTML =
-        `<span class="option-letter">${String.fromCharCode(65 + index)}</span>` +
-        `<span class="option-value">${choice.a} + ${choice.b}</span>` +
-        '<span class="option-arrow">↗</span>';
-      button.addEventListener("click", () => handleAnswer(index));
-      elements.options.appendChild(button);
+      const letter = document.createElement("span");
+      letter.className = "option-letter";
+      letter.textContent = String.fromCharCode(65 + index);
+      const value = document.createElement("span");
+      value.className = "option-value";
+      value.textContent = expression;
+      const arrow = document.createElement("span");
+      arrow.className = "option-arrow";
+      arrow.textContent = "↗";
+      button.append(letter, value, arrow);
+      button.addEventListener("click", () => submitAnswer(index, button));
+      el.options.appendChild(button);
     });
   }
 
-  function showAdScreen() {
-    elements.questionArea.classList.add("hidden");
-    elements.completeArea.classList.add("hidden");
-    elements.adStatus.classList.remove("hidden");
-    elements.adStatusTitle.textContent = "Sponsored ad";
-    elements.adStatusCopy.textContent = "Watch the full ad to unlock the result and continue. You do not need to click the ad.";
+  function showCooldown(seconds) {
+    el.questionArea.classList.add("hidden");
+    el.completeArea.classList.add("hidden");
+    el.adStatus.classList.add("hidden");
+    showNotice(
+      "Bonus already claimed",
+      "Your next hourly bonus will be available in " + formatRemaining(seconds) + ".",
+      false
+    );
   }
 
-  function showChallengeComplete() {
-    elements.questionArea.classList.add("hidden");
-    elements.adStatus.classList.add("hidden");
-    elements.completeArea.classList.remove("hidden");
-    elements.roundCount.textContent = "2 / 2 COMPLETED";
-    elements.progressFill.style.width = "100%";
-  }
-
-  async function showRewardedAd() {
-    if (!state.blockId) {
-      throw new Error("AdsGram is not connected yet. The owner must add the AdsGram block ID.");
-    }
-    if (!window.Adsgram || typeof window.Adsgram.init !== "function") {
-      throw new Error("AdsGram could not load. Check your connection and try again.");
-    }
-    if (!state.adController) {
-      state.adController = window.Adsgram.init({ blockId: state.blockId });
-      state.adController.addEventListener("onReward", () => { state.adRewarded = true; });
-    }
-
-    state.adRewarded = false;
-    const result = await state.adController.show();
-    if (result && result.error) {
-      throw new Error("The ad could not be completed. Please try again.");
-    }
-    if (!state.adRewarded && !(result && result.done === true)) {
-      throw new Error("The ad was not completed. Watch it to the end to continue.");
-    }
-    return true;
-  }
-
-  function unlockAfterAd() {
-    const answer = state.pendingAnswer;
-    state.pendingAnswer = null;
-    state.adBusy = false;
-    elements.adStatus.classList.add("hidden");
-    elements.questionArea.classList.remove("hidden");
-
-    if (answer === state.question.correctIndex) {
-      elements.feedback.textContent = "✓ Correct answer. Sponsored ad completed.";
-      elements.feedback.className = "feedback success";
-      if (state.questionIndex === 0) {
-        state.questionIndex = 1;
-        window.setTimeout(setQuestion, 700);
-      } else {
-        state.challengeCompleted = true;
-        window.setTimeout(showChallengeComplete, 650);
-      }
-    } else {
-      elements.feedback.textContent = "Not quite. Try this question again; another ad is shown after each attempt.";
-      elements.feedback.className = "feedback error";
-      renderEnabledOptions();
-    }
-  }
-
-  function renderEnabledOptions() {
-    [...elements.options.querySelectorAll("button")].forEach(button => {
-      button.disabled = false;
-    });
-  }
-
-  async function handleAnswer(index) {
-    if (state.adBusy || state.challengeCompleted || !state.question) return;
-    state.pendingAnswer = index;
-    state.adBusy = true;
-    [...elements.options.querySelectorAll("button")].forEach(button => { button.disabled = true; });
+  function showVerified(data) {
+    state.verified = true;
+    el.questionArea.classList.add("hidden");
+    el.adStatus.classList.add("hidden");
+    el.completeArea.classList.remove("hidden");
+    el.roundCount.textContent = "VERIFIED";
+    el.progressFill.style.width = "100%";
+    el.bonusAmount.textContent = "+" + data.bonusAmount + " USDT";
+    el.bonusBalance.textContent = "New balance: " + data.balance + " USDT";
+    el.okButton.disabled = false;
     hideNotice();
-    showAdScreen();
-
-    try {
-      await showRewardedAd();
-      unlockAfterAd();
-    } catch (error) {
-      state.adBusy = false;
-      elements.adStatus.classList.add("hidden");
-      elements.questionArea.classList.remove("hidden");
-      renderEnabledOptions();
-      showNotice("Ad not completed", error && error.message ? error.message : "Please try the sponsored ad again.", true);
-    }
   }
 
-  async function validateTelegramSession() {
-    if (!tg || !tg.initData) {
-      showNotice("Open inside Telegram", "Launch this Math CAPTCHA Mini App using the button in the USDT09 bot.");
-      return false;
-    }
+  async function submitAnswer(answerIndex, clickedButton) {
+    if (!state.challengeId || !state.question) return;
+    const buttons = [...el.options.querySelectorAll("button")];
+    buttons.forEach(button => { button.disabled = true; });
+    el.feedback.textContent = "Checking your answer…";
+    el.feedback.className = "feedback";
 
     try {
-      const response = await fetch("/api/miniapp/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ initData: tg.initData })
+      const result = await postJson("/api/miniapp/answer", {
+        initData: state.initData,
+        challengeId: state.challengeId,
+        answerIndex: answerIndex
       });
-      const data = await response.json();
-      if (!response.ok || !data.ok) {
-        throw new Error(data.detail || "Telegram session could not be verified.");
+
+      if (result.status === "incorrect") {
+        el.feedback.textContent = "Not quite. Try again.";
+        el.feedback.className = "feedback error";
+        buttons.forEach(button => { button.disabled = false; });
+        return;
       }
-      state.user = data.user;
-      elements.userName.textContent = data.user.first_name || data.user.username || "PLAYER";
-      return true;
+      if (result.status === "next") {
+        el.feedback.textContent = "✓ Correct. One more question.";
+        el.feedback.className = "feedback success";
+        window.setTimeout(() => displayQuestion(result.question), 450);
+        return;
+      }
+      if (result.status === "verified") {
+        showVerified(result);
+        return;
+      }
+      if (result.status === "cooldown") {
+        showCooldown(result.remainingSeconds);
+        return;
+      }
+      throw new Error("The challenge response was not recognised.");
     } catch (error) {
-      showNotice("Session verification failed", error.message || "Close and reopen the Mini App from Telegram.");
-      return false;
+      buttons.forEach(button => { button.disabled = false; });
+      el.feedback.textContent = error.message || "Could not check the answer.";
+      el.feedback.className = "feedback error";
     }
   }
 
-  async function loadConfig() {
-    const response = await fetch("/api/miniapp/config", { cache: "no-store" });
-    if (!response.ok) throw new Error("Mini App settings could not be loaded.");
-    return response.json();
+  async function openOptionalAd() {
+    if (!state.verified || state.adOpened) return;
+    state.adOpened = true;
+    hideNotice();
+    el.completeArea.classList.add("hidden");
+    el.adStatus.classList.remove("hidden");
+    el.adStatusTitle.textContent = "Optional sponsored ad";
+    el.adStatusCopy.textContent = "Your bonus has already been credited. You can close or skip the ad at any time.";
+    el.finishButton.classList.add("hidden");
+
+    if (!state.blockId || !window.Adsgram || typeof window.Adsgram.init !== "function") {
+      el.adStatusTitle.textContent = "Your bonus is ready";
+      el.adStatusCopy.textContent = "No sponsored ad is available right now. Your bonus is already in your USDT09 balance.";
+      el.finishButton.classList.remove("hidden");
+      return;
+    }
+
+    try {
+      const controller = window.Adsgram.init({ blockId: state.blockId });
+      await controller.show();
+      el.adStatusTitle.textContent = "Thank you";
+      el.adStatusCopy.textContent = "Your bonus was credited before the ad. You can return to USDT09 now.";
+    } catch (_) {
+      el.adStatusTitle.textContent = "Your bonus is safe";
+      el.adStatusCopy.textContent = "The optional ad was not available or was closed. Your bonus is already in your USDT09 balance.";
+    }
+    el.finishButton.classList.remove("hidden");
   }
 
   async function initialize() {
-    if (tg) {
-      tg.ready();
-      tg.expand();
-      if (tg.setHeaderColor) tg.setHeaderColor("#090d1c");
-      if (tg.setBackgroundColor) tg.setBackgroundColor("#090d1c");
+    if (!tg || !tg.initData) {
+      showNotice("Open inside Telegram", "Open USDT09 and press 🎁 Bonus, then tap the Math CAPTCHA button.", false);
+      return;
     }
 
+    tg.ready();
+    tg.expand();
+    if (tg.setHeaderColor) tg.setHeaderColor("#090d1c");
+    if (tg.setBackgroundColor) tg.setBackgroundColor("#090d1c");
+    state.initData = tg.initData;
+
     try {
-      const [validSession, config] = await Promise.all([validateTelegramSession(), loadConfig()]);
-      if (!validSession) return;
+      const configResponse = await fetch("/api/miniapp/config", { cache: "no-store" });
+      const config = await configResponse.json();
       state.blockId = String(config.adsgramBlockId || "").trim();
-      setQuestion();
-      if (!state.blockId) {
-        showNotice("AdsGram setup required", "The Mini App is live, but real ads are not connected yet. Add the AdsGram block ID in Render as ADSGRAM_BLOCK_ID.");
+
+      const start = await postJson("/api/miniapp/start", { initData: state.initData });
+      const user = tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user : {};
+      el.userName.textContent = user.first_name || user.username || "PLAYER";
+
+      if (start.status === "cooldown") {
+        showCooldown(start.remainingSeconds);
+        return;
       }
+      state.challengeId = start.challengeId;
+      displayQuestion(start.question);
     } catch (error) {
-      showNotice("Could not start", error.message || "Please close and reopen the Mini App.");
+      showNotice("Could not start verification", error.message || "Close and reopen the Mini App from the Bonus button.", true);
     }
   }
 
-  elements.nextRound.addEventListener("click", () => {
-    state.questionIndex = 0;
-    state.challengeCompleted = false;
-    hideNotice();
-    setQuestion();
+  el.okButton.addEventListener("click", openOptionalAd);
+  el.finishButton.addEventListener("click", () => {
+    if (tg && typeof tg.close === "function") tg.close();
   });
-
-  elements.retryAd.addEventListener("click", async () => {
-    if (state.pendingAnswer === null || state.adBusy) return;
+  el.retryButton.addEventListener("click", () => {
     hideNotice();
-    state.adBusy = true;
-    showAdScreen();
-    try {
-      await showRewardedAd();
-      unlockAfterAd();
-    } catch (error) {
-      state.adBusy = false;
-      elements.adStatus.classList.add("hidden");
-      elements.questionArea.classList.remove("hidden");
-      renderEnabledOptions();
-      showNotice("Ad not completed", error && error.message ? error.message : "Please try again.", true);
-    }
+    initialize();
   });
 
   initialize();
