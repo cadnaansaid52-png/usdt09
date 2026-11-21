@@ -982,10 +982,10 @@ async def answer_math_challenge(request: Request):
                 await active_bot.send_message(
                     chat_id=int(user_data["id"]),
                     text=(
-                        "✅ <b>Bonus Verified Successfully!</b>\\n\\n"
-                        "Math CAPTCHA-kii si sax ah ayaad u dhamaysay.\\n"
-                        f"💰 Bonus lagu daray: <b>+{bonus_amount} USDT</b>\\n"
-                        f"💳 Balance-kaaga cusub: <b>{new_balance} USDT</b>\\n\\n"
+                        "✅ <b>Bonus Verified Successfully!</b>\n\n"
+                        "Math CAPTCHA-kii si sax ah ayaad u dhamaysay.\n"
+                        f"💰 Bonus lagu daray: <b>+{bonus_amount} USDT</b>\n"
+                        f"💳 Balance-kaaga cusub: <b>{new_balance} USDT</b>\n\n"
                         "Taabo OK haddii aad rabto inaad furto xayeysiis ikhtiyaari ah. "
                         "Bonus-kaaga hore ayaa loogu daray balance-kaaga."
                     ),
