@@ -98,6 +98,9 @@ h1 span { color: #9a8bff; }
 .complete-area { padding: 18px 4px 3px; text-align: center; }
 .complete-icon { width: 58px; height: 58px; display: grid; place-items: center; margin: 0 auto 16px; border-radius: 20px; font-size: 28px; color: #08221e; background: linear-gradient(135deg, #7bf0c5, #5bd5d0); box-shadow: 0 10px 32px rgba(86, 225, 187, .18); }
 .complete-title { font-size: 22px; font-weight: 800; }
+.bonus-amount { color: var(--green) !important; font-size: 29px !important; font-weight: 800; letter-spacing: -.04em; margin-top: 14px !important; }
+.bonus-balance { color: #d0d8ef !important; font-size: 12px !important; margin-top: 4px !important; }
+.optional-ad-copy { color: #929fbd !important; font-size: 11px !important; margin-top: 18px !important; }
 .primary-button {
   display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 52px;
   margin-top: 24px; border: 0; border-radius: 15px; color: #10162b; font-weight: 800; font-size: 13px;
