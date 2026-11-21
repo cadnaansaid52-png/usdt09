@@ -123,7 +123,7 @@ def init_db():
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS miniapp_math_challenges (
-                    id UUID PRIMARY KEY,
+                    id TEXT PRIMARY KEY,
                     telegram_id BIGINT NOT NULL REFERENCES users(telegram_id),
                     questions JSONB NOT NULL,
                     current_question INTEGER NOT NULL DEFAULT 0,
