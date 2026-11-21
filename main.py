@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import secrets
+import random
 import json
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -862,7 +863,7 @@ def _new_math_question():
             continue
         sums.add(result)
         choices.append(f"{left} + {right}")
-    secrets.SystemRandom().shuffle(choices)
+    random.SystemRandom().shuffle(choices)
     return {
         "target": target,
         "options": choices,
