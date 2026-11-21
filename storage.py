@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from decimal import Decimal, InvalidOperation
 
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import Json, RealDictCursor
 
 UNITS_PER_USDT = 10000
 DEFAULT_BONUS_UNITS = 500
@@ -121,6 +121,18 @@ def init_db():
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS miniapp_math_challenges (
+                    id UUID PRIMARY KEY,
+                    telegram_id BIGINT NOT NULL REFERENCES users(telegram_id),
+                    questions JSONB NOT NULL,
+                    current_question INTEGER NOT NULL DEFAULT 0,
+                    completed BOOLEAN NOT NULL DEFAULT FALSE,
+                    expires_at BIGINT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_math_challenges_user_created ON miniapp_math_challenges(telegram_id, created_at DESC)")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS referral_rewards (
                     id BIGSERIAL PRIMARY KEY,
@@ -435,6 +447,159 @@ def parse_amount_units(raw_amount):
 
 def format_units(units, places=4):
     return f"{int(units) / UNITS_PER_USDT:.{places}f}"
+
+
+def get_bonus_status(telegram_id, now=None):
+    now = int(now or time.time())
+    settings = get_settings()
+    user = get_user(telegram_id)
+    if not user or not user.get("verified") or user.get("is_banned"):
+        return "not_verified", 0, 0
+    interval = max(60, int(settings["bonus_interval_seconds"]))
+    last = user.get("last_bonus_at")
+    if last is not None:
+        remaining = interval - (now - int(last))
+        if remaining > 0:
+            return "cooldown", int(user["balance_units"]), remaining
+    return "ready", int(user["balance_units"]), 0
+
+
+def create_math_challenge(telegram_id, questions, now=None):
+    now = int(now or time.time())
+    challenge_id = str(uuid.uuid4())
+    expires_at = now + 600
+    with db_session() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO miniapp_math_challenges
+                    (id, telegram_id, questions, current_question, completed, expires_at)
+                VALUES (%s, %s, %s, 0, FALSE, %s)
+                """,
+                (challenge_id, int(telegram_id), Json(questions), expires_at),
+            )
+    return challenge_id
+
+
+def submit_math_answer(challenge_id, telegram_id, answer_index, now=None):
+    now = int(now or time.time())
+    try:
+        challenge_id = str(uuid.UUID(str(challenge_id)))
+        answer_index = int(answer_index)
+    except (TypeError, ValueError, OverflowError):
+        return {"status": "invalid"}
+
+    settings = get_settings()
+    with db_session() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT * FROM miniapp_math_challenges
+                WHERE id = %s AND telegram_id = %s
+                FOR UPDATE
+                """,
+                (challenge_id, int(telegram_id)),
+            )
+            challenge = _dict_row(cur)
+            if not challenge:
+                return {"status": "not_found"}
+            if challenge["completed"]:
+                return {"status": "completed"}
+            if int(challenge["expires_at"]) < now:
+                return {"status": "expired"}
+
+            questions = challenge["questions"]
+            current = int(challenge["current_question"])
+            if current < 0 or current >= len(questions):
+                return {"status": "invalid"}
+            question = questions[current]
+            if answer_index < 0 or answer_index >= len(question["options"]):
+                return {"status": "invalid"}
+
+            if answer_index != int(question["correct_index"]):
+                return {
+                    "status": "incorrect",
+                    "question": {
+                        "number": current + 1,
+                        "total": len(questions),
+                        "target": int(question["target"]),
+                        "options": list(question["options"]),
+                    },
+                }
+
+            if current == 0:
+                cur.execute(
+                    """
+                    UPDATE miniapp_math_challenges
+                    SET current_question = 1
+                    WHERE id = %s
+                    """,
+                    (challenge_id,),
+                )
+                next_question = questions[1]
+                return {
+                    "status": "next",
+                    "question": {
+                        "number": 2,
+                        "total": len(questions),
+                        "target": int(next_question["target"]),
+                        "options": list(next_question["options"]),
+                    },
+                }
+
+            cur.execute(
+                "SELECT * FROM users WHERE telegram_id = %s FOR UPDATE",
+                (int(telegram_id),),
+            )
+            user = _dict_row(cur)
+            if not user or not user["verified"] or user["is_banned"]:
+                cur.execute(
+                    "UPDATE miniapp_math_challenges SET completed = TRUE WHERE id = %s",
+                    (challenge_id,),
+                )
+                return {"status": "not_verified"}
+
+            interval = max(60, int(settings["bonus_interval_seconds"]))
+            last = user["last_bonus_at"]
+            if last is not None:
+                remaining = interval - (now - int(last))
+                if remaining > 0:
+                    cur.execute(
+                        "UPDATE miniapp_math_challenges SET completed = TRUE WHERE id = %s",
+                        (challenge_id,),
+                    )
+                    return {
+                        "status": "cooldown",
+                        "remaining": remaining,
+                        "balance_units": int(user["balance_units"]),
+                    }
+
+            amount = int(settings["bonus_units"])
+            new_balance = int(user["balance_units"]) + amount
+            cur.execute(
+                """
+                UPDATE users
+                SET balance_units = %s, last_bonus_at = %s
+                WHERE telegram_id = %s
+                """,
+                (new_balance, now, int(telegram_id)),
+            )
+            cur.execute(
+                """
+                INSERT INTO balance_ledger (telegram_id, amount_units, reason, reference)
+                VALUES (%s, %s, 'hourly_bonus', %s)
+                """,
+                (int(telegram_id), amount, f"math-bonus-{challenge_id}"),
+            )
+            cur.execute(
+                "UPDATE miniapp_math_challenges SET completed = TRUE WHERE id = %s",
+                (challenge_id,),
+            )
+            return {
+                "status": "claimed",
+                "amount_units": amount,
+                "balance_units": new_balance,
+            }
 
 
 def claim_hourly_bonus(telegram_id, now=None):
