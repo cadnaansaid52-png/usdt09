@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#090d1c">
-  <meta name="description" content="A quick two-question math challenge inside Telegram.">
-  <title>Math CAPTCHA</title>
+  <meta name="description" content="Verify your hourly bonus with two quick math questions.">
+  <title>USDT09 · Math CAPTCHA</title>
   <link rel="stylesheet" href="/miniapp/style.css">
   <script src="https://telegram.org/js/telegram-web-app.js?65" defer></script>
   <script src="https://sad.adsgram.ai/js/sad.min.js" defer></script>
@@ -19,8 +19,8 @@
       <div class="brand">
         <div class="brand-mark">∑</div>
         <div>
-          <div class="brand-name">MATH CAPTCHA</div>
-          <div class="brand-subtitle">Think fast. Stay sharp.</div>
+          <div class="brand-name">USDT09 · BONUS</div>
+          <div class="brand-subtitle">Quick math verification</div>
         </div>
       </div>
       <div class="user-pill" id="user-pill">
@@ -30,14 +30,14 @@
     </header>
 
     <section class="hero">
-      <div class="eyebrow"><span class="eyebrow-dot"></span> HUMAN CHECK CHALLENGE</div>
-      <h1>Prove it with<br><span>your mind.</span></h1>
-      <p class="hero-copy">Solve two quick math questions. A sponsored ad appears after every answer to keep the challenge running.</p>
+      <div class="eyebrow"><span class="eyebrow-dot"></span> BONUS VERIFICATION</div>
+      <h1>One quick test.<br><span>Your bonus.</span></h1>
+      <p class="hero-copy">Answer two random math questions to verify and claim your USDT09 hourly bonus.</p>
     </section>
 
     <section class="challenge-card" id="challenge-card" aria-live="polite">
       <div class="card-topline">
-        <div class="round-label">YOUR CHALLENGE</div>
+        <div class="round-label">MATH VERIFICATION</div>
         <div class="round-count" id="round-count">QUESTION 1 / 2</div>
       </div>
       <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
@@ -56,27 +56,30 @@
 
       <div class="complete-area hidden" id="complete-area">
         <div class="complete-icon">✓</div>
-        <div class="complete-title">Challenge completed</div>
-        <p>You solved both questions. Ready for another round?</p>
-        <button class="primary-button" id="next-round" type="button">Start another challenge <span>→</span></button>
+        <div class="complete-title">Verified successfully!</div>
+        <p class="bonus-amount" id="bonus-amount">+0.05 USDT</p>
+        <p class="bonus-balance" id="bonus-balance">Your bonus has been added to your balance.</p>
+        <p class="optional-ad-copy">Your bonus is already credited. Tap OK only if you would like to open an optional sponsored ad.</p>
+        <button class="primary-button" id="ok-button" type="button">OK <span>→</span></button>
       </div>
 
       <div class="ad-status hidden" id="ad-status">
         <div class="ad-spinner"></div>
-        <div class="ad-status-title" id="ad-status-title">Loading sponsored ad</div>
-        <p id="ad-status-copy">Please watch the full ad to continue. You do not need to click it.</p>
+        <div class="ad-status-title" id="ad-status-title">Opening sponsored ad</div>
+        <p id="ad-status-copy">Your bonus is safe and has already been credited. The ad is optional.</p>
+        <button class="notice-button" id="finish-button" type="button">Continue</button>
       </div>
     </section>
 
     <footer class="footer">
-      <div class="footer-note"><span class="shield">◆</span> Two questions per round · No cash rewards or withdrawals</div>
-      <div class="footer-brand">POWERED BY ADSGRAM <span>•</span> MATH CHALLENGE</div>
+      <div class="footer-note"><span class="shield">◆</span> Two questions · Your bonus is credited before any optional ad</div>
+      <div class="footer-brand">USDT09 <span>•</span> MATH CAPTCHA</div>
     </footer>
 
     <section class="notice hidden" id="notice" role="alert">
       <div class="notice-title" id="notice-title">Open inside Telegram</div>
       <p id="notice-copy">Launch this Mini App from the USDT09 bot to continue.</p>
-      <button class="notice-button hidden" id="retry-ad" type="button">Try ad again</button>
+      <button class="notice-button hidden" id="retry-button" type="button">Try again</button>
     </section>
   </main>
 </body>
