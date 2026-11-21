@@ -123,7 +123,13 @@
     el.progressFill.style.width = "100%";
     el.bonusAmount.textContent = "+" + data.bonusAmount + " USDT";
     el.bonusBalance.textContent = "New balance: " + data.balance + " USDT";
-    el.okButton.disabled = false;
+    const optionalAdCopy = document.querySelector(".optional-ad-copy");
+    if (optionalAdCopy) {
+      optionalAdCopy.textContent = data.botMessageSent
+        ? "A bonus confirmation message has been sent to your Telegram chat. Tap OK in that message only if you want to open the optional ad."
+        : "Your bonus is already credited. The Telegram confirmation could not be sent right now; you can safely close this Mini App.";
+    }
+    el.okButton.classList.add("hidden");
     hideNotice();
   }
 
@@ -216,10 +222,18 @@
       const config = await configResponse.json();
       state.blockId = String(config.adsgramBlockId || "").trim();
 
-      const start = await postJson("/api/miniapp/start", { initData: state.initData });
-      const user = tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user : {};
+      const session = await postJson("/api/miniapp/session", { initData: state.initData });
+      const user = session.user || (tg.initDataUnsafe && tg.initDataUnsafe.user) || {};
       el.userName.textContent = user.first_name || user.username || "PLAYER";
 
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get("open_ad") === "1") {
+        state.verified = true;
+        await openOptionalAd();
+        return;
+      }
+
+      const start = await postJson("/api/miniapp/start", { initData: state.initData });
       if (start.status === "cooldown") {
         showCooldown(start.remainingSeconds);
         return;
@@ -231,7 +245,6 @@
     }
   }
 
-  el.okButton.addEventListener("click", openOptionalAd);
   el.finishButton.addEventListener("click", () => {
     if (tg && typeof tg.close === "function") tg.close();
   });
